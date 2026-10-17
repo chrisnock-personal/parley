@@ -15,6 +15,14 @@ export function createIntercomClientUa(extension: string, password: string): any
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const wsUri = `${proto}://${window.location.host}/ws`;
   const socket = new JsSIP.WebSocketInterface(wsUri);
+  // JsSIP derives the Via transport from the URL scheme, so a wss:// page
+  // sends "Via: SIP/2.0/WSS". But nginx terminates TLS, and drachtio only
+  // ever receives plain ws -and Sofia-SIP silently DROPS a request whose Via
+  // transport doesn't match the connection it arrived on (no response, no
+  // log). Every https:// client hung on "connecting" until registration
+  // failed (an iPad, 2026-10-17; desktop only worked because it was on
+  // http://localhost). Declare the transport drachtio actually sees.
+  socket.via_transport = 'WS';
   const ua = new JsSIP.UA({
     sockets: [socket],
     uri: `sip:${extension}@${window.location.hostname}`,
