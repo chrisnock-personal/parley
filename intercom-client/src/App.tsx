@@ -685,24 +685,37 @@ export default function App() {
       )}
 
       <div className="client-body">
-        <div className="card-grid">
-          <IcmCard
-            state={icm}
-            actions={actions}
-            keys={directButtons}
-            lineUp={lineUp}
-            autoAnswer={intercomAutoAnswer}
-            onToggleAutoAnswer={() => setIntercomAutoAnswer((v) => !v)}
-            onHold={() => managerRef.current.setHold(ICM_SLOT, !icm.onHold)}
-            onHangup={() => managerRef.current.hangup(ICM_SLOT)}
-            onPress={handleDirectPress}
-          />
-          {groupButtons.map((b) => (
-            <GroupStrip key={b.id} button={b} state={slotStates[lineSlot(b.target_group_dial_code!)] ?? idleSlot()}
-              actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
-              selfExt={session.extension} onToggleJoin={() => handleLineToggle(b)} />
-          ))}
-        </div>
+        {/* Direct intercom and groups are different things, so they get
+            separate sections -but each is a grid of cards, so the Intercom
+            card stays card-sized instead of spanning the page. */}
+        <section className="client-section">
+          <h2>Intercom</h2>
+          <div className="card-grid">
+            <IcmCard
+              state={icm}
+              actions={actions}
+              keys={directButtons}
+              lineUp={lineUp}
+              autoAnswer={intercomAutoAnswer}
+              onToggleAutoAnswer={() => setIntercomAutoAnswer((v) => !v)}
+              onHold={() => managerRef.current.setHold(ICM_SLOT, !icm.onHold)}
+              onHangup={() => managerRef.current.hangup(ICM_SLOT)}
+              onPress={handleDirectPress}
+            />
+          </div>
+        </section>
+
+        <section className="client-section">
+          <h2>Groups</h2>
+          <div className="card-grid">
+            {groupButtons.map((b) => (
+              <GroupStrip key={b.id} button={b} state={slotStates[lineSlot(b.target_group_dial_code!)] ?? idleSlot()}
+                actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
+                selfExt={session.extension} onToggleJoin={() => handleLineToggle(b)} />
+            ))}
+          </div>
+          {groupButtons.length === 0 && <div className="empty">No groups assigned yet.</div>}
+        </section>
         {session.buttons.length === 0 && <div className="empty">No buttons assigned yet.</div>}
       </div>
     </div>
