@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reference config. entrypoint.sh passes equivalent flags; keep this in sync
+     if you switch to `drachtio -f /etc/drachtio.conf.xml`. -->
+<drachtio>
+  <admin port="9022" secret="cymru">0.0.0.0</admin>
+  <sip>
+    <contacts>
+      <!-- Pinned off the standard 5060 -see entrypoint.sh's comment: this
+           container binds the HOST's port directly (network_mode: host),
+           and 5060 collides with other SIP stacks that may also run on
+           this host. -->
+      <contact>sip:*:5063;transport=udp,tcp</contact>
+      <!-- JsSIP endpoints connect over WebSocket. Pinned off the standard
+           8088 -see entrypoint.sh's comment: this host's asterisk-ci
+           project already holds 8088 too. nginx.conf's /ws proxy target
+           must match. -->
+      <contact>sip:*:8188;transport=ws</contact>
+    </contacts>
+    <timers><session-timer>1800</session-timer></timers>
+  </sip>
+  <cdrs>false</cdrs>
+  <logging>
+    <sofia-loglevel>2</sofia-loglevel>
+    <loglevel>info</loglevel>
+  </logging>
+</drachtio>
