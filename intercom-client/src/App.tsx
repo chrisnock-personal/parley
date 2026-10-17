@@ -13,6 +13,12 @@ const GROUP_PREFIX = '*8';
 // Extracts just the extension from a SIP URI like "sip:1002@host" -> "1002"
 // -same shape as pbx-core's own registrar.ts extOf() helper, duplicated
 // here since the intercom client and pbx-core are separate deployables.
+// Browsers only expose getUserMedia in a secure context (HTTPS, or plain
+// HTTP on localhost). Without it every call fails the instant it asks for
+// the mic, so say so up front. nginx already redirects non-localhost HTTP
+// visits to HTTPS (see nginx.conf); this is the backstop.
+const MIC_AVAILABLE = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
+
 function extOf(uri: string): string {
   const m = uri.match(/sips?:([^@;>]+)@/i);
   return m ? m[1] : uri;
@@ -503,6 +509,13 @@ export default function App() {
         </div>
         <button onClick={handleLogout}>Log out</button>
       </div>
+
+      {!MIC_AVAILABLE && (
+        <div className="error-banner">
+          Microphone unavailable: this page isn't a secure context, so calls can't connect.
+          Open it over https:// instead.
+        </div>
+      )}
 
       {incoming && (
         <div className="incoming-banner">

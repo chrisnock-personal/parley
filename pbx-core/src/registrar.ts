@@ -15,21 +15,29 @@ export interface Binding {
   expiresAt: number;    // epoch ms
 }
 
+// Keyed by extension alone, not the full user@host AOR. This is a
+// single-domain system, and the host part is just whatever address the
+// client happened to reach us by: a browser opened on localhost registers
+// sip:1001@localhost, one on the LAN IP registers sip:1002@192.168.1.150,
+// and each dials others under its OWN host. Keying on the full AOR made
+// every cross-host direct call miss the lookup and 404 (2026-10-17).
 const bindings = new Map<string, Binding>();
+const keyOf = (aor: string) => extOf(aor).toLowerCase();
 
 export function upsert(b: Omit<Binding, 'expiresAt'>, expiresSecs: number): void {
   if (expiresSecs <= 0) {
-    bindings.delete(b.aor);
+    bindings.delete(keyOf(b.aor));
     return;
   }
-  bindings.set(b.aor, { ...b, expiresAt: Date.now() + expiresSecs * 1000 });
+  bindings.set(keyOf(b.aor), { ...b, expiresAt: Date.now() + expiresSecs * 1000 });
 }
 
 export function lookup(aor: string): Binding | undefined {
-  const b = bindings.get(aor);
+  const key = keyOf(aor);
+  const b = bindings.get(key);
   if (!b) return undefined;
   if (b.expiresAt < Date.now()) {
-    bindings.delete(aor);
+    bindings.delete(key);
     return undefined;
   }
   return b;

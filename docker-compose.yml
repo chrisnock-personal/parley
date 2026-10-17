@@ -119,6 +119,9 @@ services:
       # nginx.conf's /ws proxy target (pbx-core, host networking) -see
       # entrypoint.sh.
       PBX_HOST: ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
+      # Host-side HTTPS port (must match the "<this>:443" mapping below) -for
+      # nginx's redirect of non-localhost /intercom-client/ visits to HTTPS.
+      HTTPS_PORT: "8445"
     volumes:
       - intercom-tls-certs:/etc/nginx/tls
     ports:

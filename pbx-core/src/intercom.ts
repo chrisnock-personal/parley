@@ -23,7 +23,10 @@ export function registerDirectIntercom(srf: Srf) {
     if (targetKey.includes(config.groupPrefix)) return res.send(404, 'Group calls are handled elsewhere');
 
     const callee: Binding | undefined = lookup(targetKey);
-    if (!callee) return res.send(404, 'Endpoint not registered');
+    if (!callee) {
+      console.warn(`direct intercom call to ${targetKey}: not registered (404)`);
+      return res.send(404, 'Endpoint not registered');
+    }
 
     const callId = req.get('Call-ID');
     const fromTag = req.getParsedHeader('From').params.tag;
