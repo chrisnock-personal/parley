@@ -78,10 +78,11 @@ services:
       HEALTH_INTERVAL_MS: "30000"
       # pbx-core's read-only admin/status HTTP server (registrations + live
       # calls, for the console's "Live" view). pbx-core runs network_mode:
-      # host; controller-backend is bridge-networked, so it must reach the
-      # HOST via podman's host-loopback address, not a LAN IP -same "same-
-      # host gotcha" as endpoint rest_urls (see CLAUDE.md).
-      PBX_BASE_URL:     "http://host.containers.internal:9080"
+      # host; controller-backend is bridge-networked, so it reaches the host
+      # at its LAN IP. Not host.containers.internal: under podman 5.x + pasta
+      # that resolves to 169.254.1.2, which doesn't reach host-network
+      # services (timed out on 9080, confirmed 2026-10-17).
+      PBX_BASE_URL:     "http://${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}:9080"
       # System Health page's log viewer (routes/system.ts) talks to this
       # over HTTP to fetch other containers' logs. SECURITY NOTE: this gives
       # controller-backend control-plane visibility into EVERY container on
@@ -115,6 +116,9 @@ services:
       # the same "this host's routed/LAN IP" value everything else in this
       # stack already uses, rather than a new env var.
       CERT_SAN_IP: ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
+      # nginx.conf's /ws proxy target (pbx-core, host networking) -see
+      # entrypoint.sh.
+      PBX_HOST: ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
     volumes:
       - intercom-tls-certs:/etc/nginx/tls
     ports:

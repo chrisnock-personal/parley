@@ -68,6 +68,10 @@ input {
 }
 .client-name { font-weight: 600; margin-right: 10px; }
 .client-ext { font-family: var(--mono); color: var(--text-dim); }
+.line-status { margin-left: 12px; font-size: 12px; font-family: var(--mono); }
+.line-registered { color: var(--green); }
+.line-connecting { color: var(--amber); }
+.line-down { color: var(--red); }
 
 .incoming-banner {
   display: flex; align-items: center; gap: 12px;

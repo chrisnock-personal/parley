@@ -22,4 +22,11 @@ if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
   echo "[entrypoint] Cert generated (SAN: $SAN)"
 fi
 
+# nginx.conf's /ws proxy target -pbx-core runs network_mode: host, so it's
+# reached at the host's LAN IP (see the comment at the top of nginx.conf).
+# Substituted on every start (from the image's pristine copy), so a changed
+# PBX_HOST takes effect on a plain restart.
+: "${PBX_HOST:?PBX_HOST must be set -the host's routed/LAN IP, same as RTPENGINE_PUBLIC_IP}"
+sed "s/__PBX_HOST__/${PBX_HOST}/g" /etc/nginx/default.conf.template > /etc/nginx/conf.d/default.conf
+
 exec nginx -g 'daemon off;'

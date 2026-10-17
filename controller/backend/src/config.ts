@@ -19,7 +19,7 @@ const config = {
 
   // pbx-core's read-only admin/status HTTP server (registrations + live
   // calls) -see services/pbxCoreService.ts. Docker-compose overrides this
-  // to host.containers.internal since pbx-core runs network_mode: host.
+  // to the host's LAN IP since pbx-core runs network_mode: host.
   pbxBaseUrl: process.env.PBX_BASE_URL || 'http://127.0.0.1:9080',
 
   // Endpoint health polling (hits each endpoint's container-sip-endpoint /api/status)

@@ -217,14 +217,18 @@ function buttonLabel(b: Button): string {
 
 // Direct-intercom keys: pressing one calls that extension on the ICM slot;
 // pressing the key of the call that's already up hangs it up.
-function DirectKeys({ buttons, icm, onPress }: { buttons: Button[]; icm: SlotState; onPress: (b: Button) => void }) {
+// Starting a call needs a registered line; hanging up the active one doesn't.
+function DirectKeys({ buttons, icm, lineUp, onPress }: {
+  buttons: Button[]; icm: SlotState; lineUp: boolean; onPress: (b: Button) => void;
+}) {
   if (buttons.length === 0) return null;
   return (
     <div className="key-grid">
       {buttons.map((b) => {
         const active = icm.status !== 'idle' && icm.counterpart === b.target_extension;
         return (
-          <button key={b.id} className={`client-btn client-btn-direct${active ? ' client-btn-active' : ''}`} onClick={() => onPress(b)}>
+          <button key={b.id} className={`client-btn client-btn-direct${active ? ' client-btn-active' : ''}`}
+            disabled={!lineUp && !active} onClick={() => onPress(b)}>
             <div className="btn-type">ICM · {b.target_extension}</div>
             <div className="btn-label">{buttonLabel(b)}</div>
           </button>
@@ -237,8 +241,8 @@ function DirectKeys({ buttons, icm, onPress }: { buttons: Button[]; icm: SlotSta
 // One strip per assigned group line, joined or not -Eyevinn's "lines in a
 // production" view. Any number can be joined at once, each with its own
 // talk and listen controls.
-function LineStrip({ button, state, actions, onToggleJoin }: {
-  button: Button; state: SlotState; actions: SlotActions; onToggleJoin: () => void;
+function LineStrip({ button, state, actions, lineUp, onToggleJoin }: {
+  button: Button; state: SlotState; actions: SlotActions; lineUp: boolean; onToggleJoin: () => void;
 }) {
   const slot = lineSlot(button.target_group_dial_code!);
   const joined = state.status !== 'idle';
@@ -252,7 +256,7 @@ function LineStrip({ button, state, actions, onToggleJoin }: {
       </div>
       <div className="slot-status">{joined ? slotStatusText(state) : (button.target_group_ptt_default ? 'not joined · PTT line' : 'not joined')}</div>
       <div className="slot-controls">
-        <button className={joined ? 'leave-btn' : 'join-btn'} onClick={onToggleJoin}>{joined ? 'Leave' : 'Join'}</button>
+        <button className={joined ? 'leave-btn' : 'join-btn'} disabled={!joined && !lineUp} onClick={onToggleJoin}>{joined ? 'Leave' : 'Join'}</button>
         {live && <TalkControls state={state} onSetMuted={(m) => actions.setMuted(slot, m)} />}
       </div>
       <ListenControls state={state} onListenMute={() => actions.setListenMuted(slot, !state.listenMuted)}
@@ -281,6 +285,10 @@ export default function App() {
   const [needsSipPassword, setNeedsSipPassword] = useState(false);
   const [sipConnecting, setSipConnecting] = useState(false);
   const [sipAuthError, setSipAuthError] = useState<string | null>(null);
+  // The SIP line itself, shown in the top bar. JsSIP retries a dead
+  // WebSocket silently (no registrationFailed), so without this a broken
+  // /ws proxy just looked like calls "flashing" and failing instantly.
+  const [lineStatus, setLineStatus] = useState<'connecting' | 'registered' | 'down'>('connecting');
   const [reconnectTick, setReconnectTick] = useState(0);
   const uaRef = useRef<any>(null);
   const managerRef = useRef<CallManager>(new CallManager((evt: CallEventPayload) => {
@@ -317,7 +325,12 @@ export default function App() {
     const ua = createIntercomClientUa(session.extension, passwordRef.current);
     uaRef.current = ua;
 
+    setLineStatus('connecting');
+    ua.on('connecting', () => setLineStatus('connecting'));
+    ua.on('disconnected', () => setLineStatus('down'));
+    ua.on('unregistered', () => setLineStatus('down'));
     ua.on('registered', () => {
+      setLineStatus('registered');
       setSipConnecting(false);
       setNeedsSipPassword(false);
       setSipAuthError(null);
@@ -469,6 +482,7 @@ export default function App() {
   }
 
   const icm = slotStates[ICM_SLOT] ?? idleSlot();
+  const lineUp = lineStatus === 'registered';
   const directButtons = session.buttons.filter((b) => b.button_type === 'direct');
   const groupButtons = session.buttons.filter((b) => b.button_type === 'group');
   const actions: SlotActions = {
@@ -483,6 +497,9 @@ export default function App() {
         <div>
           <span className="client-name">{session.name}</span>
           <span className="client-ext">ext {session.extension}</span>
+          <span className={`line-status line-${lineStatus}`}>
+            {lineStatus === 'registered' ? '● line up' : lineStatus === 'connecting' ? '○ connecting…' : '✕ line down -retrying'}
+          </span>
         </div>
         <button onClick={handleLogout}>Log out</button>
       </div>
@@ -516,7 +533,7 @@ export default function App() {
             onHold={() => managerRef.current.setHold(ICM_SLOT, !icm.onHold)}
             onHangup={() => managerRef.current.hangup(ICM_SLOT)}
           />
-          <DirectKeys buttons={directButtons} icm={icm} onPress={handleDirectPress} />
+          <DirectKeys buttons={directButtons} icm={icm} lineUp={lineUp} onPress={handleDirectPress} />
         </section>
 
         <section className="client-section">
@@ -524,7 +541,7 @@ export default function App() {
           <div className="line-list">
             {groupButtons.map((b) => (
               <LineStrip key={b.id} button={b} state={slotStates[lineSlot(b.target_group_dial_code!)] ?? idleSlot()}
-                actions={actions} onToggleJoin={() => handleLineToggle(b)} />
+                actions={actions} lineUp={lineUp} onToggleJoin={() => handleLineToggle(b)} />
             ))}
             {groupButtons.length === 0 && <div className="empty">No group lines assigned yet.</div>}
           </div>
