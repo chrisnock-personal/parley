@@ -176,9 +176,11 @@ proxied through the same nginx at `/ws`.
   through the warning (desktop Chrome/Firefox do allow the WebSocket after
   that).
 
-The CA is name-constrained to `localhost`, `127.0.0.1` and
-`RTPENGINE_PUBLIC_IP`, so trusting it can't be used to impersonate any other
-site. The server certificate follows Apple's rules (825-day validity,
+The CA has **no** name constraints: iOS rejected a name-constrained version
+(see `controller/frontend/entrypoint.sh`). Its private key never leaves the
+`intercom-tls-certs` volume, but anyone holding that key could mint
+certificates that trusting devices would accept for any site, so protect
+the volume, and remove the profile from devices you no longer use. The server certificate follows Apple's rules (825-day validity,
 server-auth usage) and is re-issued automatically within 30 days of expiry.
 If `RTPENGINE_PUBLIC_IP` changes, a new CA is generated and every device
 must install it again.

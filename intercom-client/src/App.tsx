@@ -295,6 +295,10 @@ export default function App() {
   // WebSocket silently (no registrationFailed), so without this a broken
   // /ws proxy just looked like calls "flashing" and failing instantly.
   const [lineStatus, setLineStatus] = useState<'connecting' | 'registered' | 'down'>('connecting');
+  // Why the last WebSocket attempt failed, shown in the badge. 1006 with no
+  // reason is the browser's generic "connection failed", typically a TLS
+  // trust failure on wss:// (see README -> TLS).
+  const [lineError, setLineError] = useState<string | null>(null);
   const [reconnectTick, setReconnectTick] = useState(0);
   const uaRef = useRef<any>(null);
   const managerRef = useRef<CallManager>(new CallManager((evt: CallEventPayload) => {
@@ -333,10 +337,17 @@ export default function App() {
 
     setLineStatus('connecting');
     ua.on('connecting', () => setLineStatus('connecting'));
-    ua.on('disconnected', () => setLineStatus('down'));
+    ua.on('disconnected', (e: any) => {
+      setLineStatus('down');
+      const code = e?.code;
+      const why = e?.reason || (e?.error ? 'connection error' : '');
+      setLineError(code ? `ws ${code}${why ? ` ${why}` : ''}` : why || null);
+      console.warn('[sip] websocket disconnected', e);
+    });
     ua.on('unregistered', () => setLineStatus('down'));
     ua.on('registered', () => {
       setLineStatus('registered');
+      setLineError(null);
       setSipConnecting(false);
       setNeedsSipPassword(false);
       setSipAuthError(null);
@@ -505,6 +516,7 @@ export default function App() {
           <span className="client-ext">ext {session.extension}</span>
           <span className={`line-status line-${lineStatus}`}>
             {lineStatus === 'registered' ? '● line up' : lineStatus === 'connecting' ? '○ connecting…' : '✕ line down -retrying'}
+            {lineStatus !== 'registered' && lineError && ` (${lineError})`}
           </span>
         </div>
         <button onClick={handleLogout}>Log out</button>

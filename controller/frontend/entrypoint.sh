@@ -11,9 +11,16 @@
 # from an iPad. Installing and trusting a CA fixes page AND wss://, and iOS
 # only trusts a server cert that is <= 825 days, has EKU serverAuth, and
 # isn't itself a CA, none of which the old single cert met. The CA is
-# downloadable at http://<host>:8080/ca.crt (see nginx.conf) and carries
-# name constraints (localhost / 127.0.0.1 / CERT_SAN_IP only), so trusting
-# it on a device can't be abused to impersonate any other site.
+# downloadable at http://<host>:8080/ca.crt (see nginx.conf).
+#
+# Deliberately NO nameConstraints on the CA. A first version restricted it
+# to localhost/127.0.0.1/CERT_SAN_IP (OpenSSL verified that correctly), but
+# an iPad with that CA installed AND fully trusted still failed every
+# WebSocket handshake with "certificate unknown". Apple's verifier treats
+# name constraints differently from OpenSSL (e.g. checking a hostname-like
+# CN against them). Trade-off accepted for a lab: ca.key never leaves this
+# volume, but anyone holding it could mint certs any trusting device would
+# accept for any name -protect the volume accordingly.
 set -e
 
 CERT_DIR=/etc/nginx/tls
@@ -24,17 +31,16 @@ CERT_FILE="$CERT_DIR/cert.pem"
 KEY_FILE="$CERT_DIR/key.pem"
 mkdir -p "$CERT_DIR"
 
-SCOPE="${CERT_SAN_IP:-none}"
+# "v2" marks the no-nameConstraints CA, so a volume holding the v1
+# (constrained) CA regenerates once.
+SCOPE="v2:${CERT_SAN_IP:-none}"
 SAN="DNS:localhost,IP:127.0.0.1"
-PERMITTED="permitted;DNS:localhost,permitted;IP:127.0.0.1/255.255.255.255"
-if [ -n "$CERT_SAN_IP" ]; then
-  SAN="$SAN,IP:$CERT_SAN_IP"
-  PERMITTED="$PERMITTED,permitted;IP:$CERT_SAN_IP/255.255.255.255"
-fi
+if [ -n "$CERT_SAN_IP" ]; then SAN="$SAN,IP:$CERT_SAN_IP"; fi
 
-# CA: generated once. Regenerated only if missing or if CERT_SAN_IP changed
-# (its name constraints would exclude the new IP) -either way every device
-# that trusted the old one has to re-install /ca.crt.
+# CA: generated once. Regenerated only if missing or if SCOPE changed
+# (CERT_SAN_IP, or the CA format version) -either way every device that
+# trusted the old one has to re-install /ca.crt. The CN carries the
+# creation date so old and new CAs are distinguishable on a device.
 if [ ! -f "$CA_CERT" ] || [ ! -f "$CA_KEY" ] || [ "$(cat "$CA_SCOPE" 2>/dev/null)" != "$SCOPE" ]; then
   echo "[entrypoint] Generating local CA (scope: $SCOPE) -devices must (re)install /ca.crt"
   cat > /tmp/ca.cnf <<CNF
@@ -43,12 +49,11 @@ distinguished_name = dn
 x509_extensions = ca_ext
 prompt = no
 [dn]
-CN = Open Intercom local CA ($SCOPE)
+CN = Open Intercom local CA (${CERT_SAN_IP:-localhost}, $(date +%F))
 [ca_ext]
 basicConstraints = critical,CA:TRUE,pathlen:0
 keyUsage = critical,keyCertSign,cRLSign
 subjectKeyIdentifier = hash
-nameConstraints = critical,$PERMITTED
 CNF
   openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 3650 \
     -config /tmp/ca.cnf -keyout "$CA_KEY" -out "$CA_CERT"
