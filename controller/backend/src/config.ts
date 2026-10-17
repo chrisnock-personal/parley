@@ -26,6 +26,10 @@ const config = {
   healthInterval:      parseInt(process.env.HEALTH_INTERVAL_MS || '30000', 10),
   healthLogRetentionDays: parseInt(process.env.HEALTH_LOG_RETENTION_DAYS || '90', 10),
 
+  // Demo data (services/demoSeedService.ts) -off unless explicitly enabled.
+  seedDemo:     process.env.SEED_DEMO === 'true',
+  demoPassword: process.env.DEMO_PASSWORD || 'demo1234',
+
   // Graceful shutdown drain
   shutdownDrainMs: parseInt(process.env.SHUTDOWN_DRAIN_MS || '15000', 10),
 

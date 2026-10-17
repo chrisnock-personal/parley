@@ -23,12 +23,20 @@ export const config = {
 
   // createB2BUA doesn't synthesize a Contact header for the leg it originates
   // -RFC 3261 requires every INVITE to carry one, and JsSIP-based endpoints
-  // (container-sip-endpoint / intercom-endpoint) reject a Contact-less INVITE
-  // outright with 500 "unable to create a Dialog without Contact header
-  // field". The literal host here doesn't need to be reachable: drachtio owns
-  // the actual socket-level routing for dialogs it originates, same as how
-  // JsSIP's own bogus `*.invalid` WS contact hosts work on the other side.
-  ownContact: '<sip:pbx-core@open-intercom.local>',
+  // reject a Contact-less INVITE outright with 500 "unable to create a
+  // Dialog without Contact header field".
+  //
+  // It MUST be routable: the far end sends in-dialog requests (BYE,
+  // re-INVITE) to the Contact. A browser leg doesn't care (JsSIP always uses
+  // its own WebSocket), but FreeSWITCH does. With the old placeholder host
+  // (open-intercom.local) it could never resolve where to send its BYE, so
+  // any hangup FreeSWITCH initiated (kick, restart, media timeout) silently
+  // never reached pbx-core, leaving a stale call in calls.ts and a leaked
+  // rtpengine session (found 2026-10-17; likely also behind the stale
+  // conference members noted in July). PBX_SIP_HOST is this host's LAN IP
+  // (compose sets it from RTPENGINE_PUBLIC_IP), PBX_SIP_PORT drachtio's
+  // UDP/TCP SIP port (entrypoint.sh).
+  ownContact: `<sip:pbx-core@${process.env.PBX_SIP_HOST || '127.0.0.1'}:${process.env.PBX_SIP_PORT || '5063'}>`,
   // Dial-plan conventions for the prototype.
   //   direct intercom : dial a registered AOR/extension directly
   //   group intercom  : dial an id in the GROUP_PREFIX namespace (Phase 2)

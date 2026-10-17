@@ -126,7 +126,15 @@ input {
   margin-left: auto; font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px;
 }
 
-.line-list {
+.participants { display: flex; flex-wrap: wrap; gap: 6px; }
+.participant {
+  font-size: 12px; padding: 2px 8px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+.participant-self { border-color: var(--green); color: var(--green); }
+.participants-empty { font-size: 12px; color: var(--text-dim); }
+
+.group-list {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;
 }
 
@@ -146,5 +154,5 @@ input {
 @media (max-width: 600px) {
   .client-body { padding: 16px; }
   .client-topbar { padding: 12px 16px; }
-  .line-list { grid-template-columns: 1fr; }
+  .group-list { grid-template-columns: 1fr; }
 }

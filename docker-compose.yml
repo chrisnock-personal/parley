@@ -76,6 +76,11 @@ services:
       PGUSER:           ${PGUSER:-intercom_user}
       PGPASSWORD:       ${PGPASSWORD:-intercom_pass}
       HEALTH_INTERVAL_MS: "30000"
+      # Demo data (controller/backend/src/services/demoSeedService.ts): a
+      # broadcast crew on 2001-2008 plus five talk groups. Off by default;
+      # additive and idempotent when on.
+      SEED_DEMO:        ${SEED_DEMO:-false}
+      DEMO_PASSWORD:    ${DEMO_PASSWORD:-demo1234}
       # pbx-core's read-only admin/status HTTP server (registrations + live
       # calls, for the console's "Live" view). pbx-core runs network_mode:
       # host; controller-backend is bridge-networked, so it reaches the host
@@ -154,6 +159,13 @@ services:
       # caught because group calls had never been boot-tested before).
       FREESWITCH_HOST: ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
       FREESWITCH_PORT: "5080"
+      # pbx-core's own routable SIP address, used as the Contact on legs it
+      # originates -FreeSWITCH sends its BYEs there (see config.ts ownContact).
+      PBX_SIP_HOST:    ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
+      PBX_SIP_PORT:    "5063"
+      # Optional debug namespaces for pbx-core's Node libraries, e.g.
+      # PBX_DEBUG=drachtio:srf in .env or the shell. Empty = off.
+      DEBUG:           ${PBX_DEBUG:-}
       # SIP digest auth (see digestAuth.ts/db.ts) -a read-only lookup of
       # directory_users.sip_ha1, the one deliberate exception to pbx-core
       # otherwise being database-free. pbx-core runs network_mode: host (no

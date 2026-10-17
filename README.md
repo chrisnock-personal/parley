@@ -3,7 +3,7 @@
 A container-based IP intercom with **direct** (point-to-point) and **group**
 (open-mic + PTT) calling, a **custom TypeScript PBX core** (drachtio +
 rtpengine), a real-browser **WebRTC intercom client** (a direct-intercom
-panel plus any number of group "lines" joined at once, laid out after
+panel plus any number of talk **groups** joined at once, laid out after
 Eyevinn's open intercom), and an admin **controller console** for directory
 users, groups, live status, health, audit, and database backup. Built for a
 **routed / multi-subnet** deployment.
@@ -58,8 +58,10 @@ Six compose services: `postgres`, `controller-backend`, `controller-frontend`
   laid out after Eyevinn's open intercom
   ([intercom-frontend](https://github.com/Eyevinn/intercom-frontend)). An
   **Intercom** panel holds the one direct call (auto-answer toggle, real SIP
-  hold/resume) and its ICM keys. Below it, one strip per assigned group
-  **line**: join or leave each independently, any number at once. Every
+  hold/resume) and its ICM keys. Below it, one strip per assigned
+  **group**: join or leave each independently, any number at once. Each
+  group lists who's in it right now, even before you join (from
+  pbx-core's live call list, polled every 3s). Every
   slot has its own talk controls (latching mute plus hold-to-talk PTT),
   its own listen controls (listen mute and volume), and an activity light
   driven by inbound audio level. Driven by a **directory user** login
@@ -138,6 +140,17 @@ podman-compose up -d --build
 required so rtpengine can anchor media reachably for endpoints on other
 subnets in a routed deployment.
 
+### Demo data
+Set `SEED_DEMO=true` in `.env` before `podman-compose up` to get a
+ready-to-use demo: a broadcast control-room crew on extensions **2001-2008**
+(Director, Producer, Vision Mixer, Audio Engineer, Camera 1/2, Floor
+Manager, Graphics), all with password `DEMO_PASSWORD` (default
+`demo1234`). There are five talk groups: Production and Engineering (open
+mic), and Cameras, Studio Floor and All Call (PTT). Each crew member gets
+ICM keys to the people they'd talk to and buttons for their groups.
+Seeding is additive and idempotent: existing extensions and group dial
+codes are never touched, so it's safe to leave on.
+
 ### Optional: the Health page's log viewer
 The console's Health page can show live logs from every container over the
 podman API socket. This needs one host-level prerequisite (rootless
@@ -193,9 +206,9 @@ must install it again.
    + password.
 3. Press an ICM key -direct calls auto-connect instantly (pbx-core's
    auto-answer headers) on the Intercom panel; press the same key again to
-   hang up. Press **Join** on a line to enter that group's FreeSWITCH
-   conference; join as many lines as you like, and **Leave** each one
-   separately. A line whose group has `ptt_default` set starts muted: hold
+   hang up. Press **Join** on a group to enter its FreeSWITCH
+   conference; join as many groups as you like, and **Leave** each one
+   separately. A group with `ptt_default` set starts muted: hold
    **Hold to talk**, or click the mute toggle to latch the mic open.
 4. Testing two intercom clients on **one machine**: use genuinely separate
    browser contexts (an Incognito window, or a different browser)
@@ -229,7 +242,7 @@ controller/
                                cert on first start
 intercom-client/            -real-browser intercom client (Vite/React/TS):
                                genuine getUserMedia/RTCPeerConnection, an
-                               Intercom (direct) slot + N group lines,
+                               Intercom (direct) slot + N groups,     
                                directory-user login
 pbx-core/                   -drachtio SIP core: registrar, direct/group
                                routing, rtpengine wrapper, admin status API
@@ -275,18 +288,19 @@ patches/
 
 ## Roadmap
 - **More from Eyevinn's open intercom**, not built yet: keyboard hotkeys
-  (per-line PTT/mute, global mute), **program/audio-feed lines**
-  (listen-only, auto-ducked while anyone talks on another line), per-line
-  **participant lists with active speaker** (needs FreeSWITCH conference
-  member data from pbx-core), **admin remote mute** kept separate from
-  self-mute, input/output **device selection**, saved **presets** (a set of
-  lines to join in one go), and Stream Deck control via Bitfocus Companion.
+  (per-group PTT/mute, global mute), **program/audio-feed groups**
+  (listen-only, auto-ducked while anyone talks in another group), an
+  **active-speaker** marker on the participant list (needs FreeSWITCH
+  conference member data from pbx-core), **admin remote mute** kept
+  separate from self-mute, input/output **device selection**, saved
+  **presets** (a set of groups to join in one go), and Stream Deck control
+  via Bitfocus Companion.
 - External PBX lines / shared line appearances are **out of scope here**.
   They belong to Open Turret.
 - **Announce-zone listen-only members** aren't dialled out yet (only
   talkers are).
 - **API keys, WebSocket live session streaming, SIP digest auth** -none
   built yet.
-- The 2026-10-17 lines-based client hasn't been boot-tested yet: no
-  multi-line call (several lines joined at once alongside a direct call)
-  has run on a live stack, and neither have PTT or the activity light.
+- Not yet exercised on a live stack: several groups joined at once
+  alongside a direct call, PTT press/release, and the activity light.
+  (Joining a group from a browser, and from an iPad over HTTPS, is verified.)

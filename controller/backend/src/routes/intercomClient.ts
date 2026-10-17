@@ -5,6 +5,7 @@ import { requireIntercomClientAuth, signIntercomClientToken } from '../middlewar
 import { authenticateDirectoryUser, listButtons } from '../services/directoryUserService';
 import { audit } from '../services/auditService';
 import { recordIntercomClientCallStart, recordIntercomClientCallEnd } from '../services/pbxService';
+import { getLiveStatus } from '../services/pbxCoreService';
 
 const router = Router();
 
@@ -37,6 +38,30 @@ router.get('/me', requireIntercomClientAuth, async (req, res, next) => {
   try {
     const buttons = await listButtons(req.intercomClientUser!.id);
     res.json({ name: req.intercomClientUser!.name, extension: req.intercomClientUser!.extension, buttons });
+  } catch (err) { next(err); }
+});
+
+// Who is in each of this user's groups right now, Eyevinn-style, so a
+// group's strip can list its participants whether or not you've joined it.
+// Comes straight from pbx-core's in-memory call list (each group call is
+// one member's leg into the FreeSWITCH conference), enriched with names by
+// getLiveStatus(). Only groups this user has a button for are returned.
+// Polled by the client every few seconds; pbx-core being unreachable is a
+// 502 the client just skips, never an error dialog.
+router.get('/groups/participants', requireIntercomClientAuth, async (req, res, next) => {
+  try {
+    const buttons = await listButtons(req.intercomClientUser!.id);
+    const mine = new Set(buttons.filter((b) => b.button_type === 'group' && b.target_group_dial_code)
+      .map((b) => b.target_group_dial_code!));
+    let live;
+    try { live = await getLiveStatus(); }
+    catch { return res.status(502).json({ error: 'pbx-core unreachable' }); }
+    const participants: Record<string, { extension: string; name: string }[]> = {};
+    for (const code of mine) participants[code] = [];
+    for (const c of live.calls) {
+      if (c.kind === 'group' && mine.has(c.to)) participants[c.to].push({ extension: c.from, name: c.fromName });
+    }
+    res.json({ participants });
   } catch (err) { next(err); }
 });
 

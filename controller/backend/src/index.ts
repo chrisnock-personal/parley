@@ -8,6 +8,7 @@ import config from './config';
 import { pool } from './db/pool';
 import { runMigrations } from './db/migrate';
 import { seedDefaultAdmin } from './services/userService';
+import { seedDemoData } from './services/demoSeedService';
 import { startHealthScheduler } from './services/endpointHealthService';
 import { errorHandler } from './middleware/errorHandler';
 
@@ -31,6 +32,7 @@ async function main() {
 
   await runMigrations();
   await seedDefaultAdmin();
+  await seedDemoData();
 
   const app = express();
   const server = http.createServer(app);

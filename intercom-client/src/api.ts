@@ -14,6 +14,11 @@ export interface Button {
   sort_order: number;
 }
 
+export interface GroupParticipant {
+  extension: string;
+  name: string;
+}
+
 export interface IntercomClientSession {
   name: string;
   extension: string;
@@ -59,6 +64,11 @@ export const api = {
     return req('/logout', { method: 'POST' }).catch(() => {});
   },
   isLoggedIn() { return !!token; },
+
+  // dial code -> who's in that group right now (see the backend route).
+  groupParticipants(): Promise<{ participants: Record<string, GroupParticipant[]> }> {
+    return req('/groups/participants');
+  },
 
   reportCallEvent(evt: {
     type: 'start' | 'end'; clientCallId: string;

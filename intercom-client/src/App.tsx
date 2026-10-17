@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api, Button, IntercomClientSession } from './api';
+import { api, Button, GroupParticipant, IntercomClientSession } from './api';
 import { createIntercomClientUa, targetUri } from './sipUa';
 import { CallManager, SlotId, SlotState, SlotStates, ICM_SLOT, lineSlot, idleSlot, CallEventPayload } from './calls';
 
@@ -244,11 +244,12 @@ function DirectKeys({ buttons, icm, lineUp, onPress }: {
   );
 }
 
-// One strip per assigned group line, joined or not -Eyevinn's "lines in a
+// One strip per assigned group, joined or not -Eyevinn's "lines in a
 // production" view. Any number can be joined at once, each with its own
-// talk and listen controls.
-function LineStrip({ button, state, actions, lineUp, onToggleJoin }: {
-  button: Button; state: SlotState; actions: SlotActions; lineUp: boolean; onToggleJoin: () => void;
+// talk and listen controls, and each lists who's in it right now.
+function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onToggleJoin }: {
+  button: Button; state: SlotState; actions: SlotActions; lineUp: boolean;
+  participants: GroupParticipant[] | undefined; selfExt: string; onToggleJoin: () => void;
 }) {
   const slot = lineSlot(button.target_group_dial_code!);
   const joined = state.status !== 'idle';
@@ -260,7 +261,19 @@ function LineStrip({ button, state, actions, lineUp, onToggleJoin }: {
         <span className="slot-name">{buttonLabel(button)}</span>
         <span className="btn-type">GRP · {GROUP_PREFIX}{button.target_group_dial_code}</span>
       </div>
-      <div className="slot-status">{joined ? slotStatusText(state) : (button.target_group_ptt_default ? 'not joined · PTT line' : 'not joined')}</div>
+      <div className="slot-status">{joined ? slotStatusText(state) : (button.target_group_ptt_default ? 'not joined · PTT group' : 'not joined')}</div>
+      {participants && (
+        <div className="participants">
+          {participants.length === 0
+            ? <span className="participants-empty">nobody in this group</span>
+            : participants.map((p) => (
+              <span key={p.extension} className={`participant${p.extension === selfExt ? ' participant-self' : ''}`}
+                title={`ext ${p.extension}`}>
+                {p.name}{p.extension === selfExt ? ' (you)' : ''}
+              </span>
+            ))}
+        </div>
+      )}
       <div className="slot-controls">
         <button className={joined ? 'leave-btn' : 'join-btn'} disabled={!joined && !lineUp} onClick={onToggleJoin}>{joined ? 'Leave' : 'Join'}</button>
         {live && <TalkControls state={state} onSetMuted={(m) => actions.setMuted(slot, m)} />}
@@ -295,6 +308,9 @@ export default function App() {
   // WebSocket silently (no registrationFailed), so without this a broken
   // /ws proxy just looked like calls "flashing" and failing instantly.
   const [lineStatus, setLineStatus] = useState<'connecting' | 'registered' | 'down'>('connecting');
+  // dial code -> current members, polled from the backend (pbx-core's live
+  // call list), so a group shows who's in it even if you haven't joined.
+  const [participants, setParticipants] = useState<Record<string, GroupParticipant[]> | null>(null);
   // Why the last WebSocket attempt failed, shown in the badge. 1006 with no
   // reason is the browser's generic "connection failed", typically a TLS
   // trust failure on wss:// (see README -> TLS).
@@ -321,6 +337,20 @@ export default function App() {
   }, [intercomAutoAnswer]);
 
   useEffect(() => managerRef.current.onChange(setSlotStates), []);
+
+  // 3s is quick enough to feel live for joins/leaves and cheap for the
+  // backend (one pbx-core status fetch plus two small queries). A failed poll
+  // (pbx-core briefly down) keeps the last list rather than blanking it.
+  useEffect(() => {
+    if (!session || needsSipPassword) return;
+    let stopped = false;
+    const poll = () => api.groupParticipants()
+      .then((r) => { if (!stopped) setParticipants(r.participants); })
+      .catch(() => { /* keep last known */ });
+    poll();
+    const t = window.setInterval(poll, 3000);
+    return () => { stopped = true; window.clearInterval(t); };
+  }, [session, needsSipPassword]);
 
   // Reattach an existing intercom client session on a same-tab reload.
   useEffect(() => {
@@ -562,13 +592,14 @@ export default function App() {
         </section>
 
         <section className="client-section">
-          <h2>Lines</h2>
-          <div className="line-list">
+          <h2>Groups</h2>
+          <div className="group-list">
             {groupButtons.map((b) => (
-              <LineStrip key={b.id} button={b} state={slotStates[lineSlot(b.target_group_dial_code!)] ?? idleSlot()}
-                actions={actions} lineUp={lineUp} onToggleJoin={() => handleLineToggle(b)} />
+              <GroupStrip key={b.id} button={b} state={slotStates[lineSlot(b.target_group_dial_code!)] ?? idleSlot()}
+                actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
+                selfExt={session.extension} onToggleJoin={() => handleLineToggle(b)} />
             ))}
-            {groupButtons.length === 0 && <div className="empty">No group lines assigned yet.</div>}
+            {groupButtons.length === 0 && <div className="empty">No groups assigned yet.</div>}
           </div>
         </section>
         {session.buttons.length === 0 && <div className="empty">No buttons assigned yet.</div>}
