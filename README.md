@@ -155,16 +155,33 @@ project's 6) -accepted deliberately for this lab; skip the log viewer
 entirely if you'd rather not take that tradeoff.
 
 ### TLS
-`controller-frontend` generates a self-signed cert on first start
-(persisted in a volume, so it survives redeploys -no new warning every
-time) and serves both plain HTTP (`:8080`) and HTTPS (`:8445` by default in
-this compose file -see `docker-compose.yml`'s comment) side by
-side; nothing extra to configure beyond `RTPENGINE_PUBLIC_IP` already
-being set in `.env` (reused as the cert's SAN entry). The intercom client's
-SIP/WS signaling is proxied through the same nginx at `/ws`, so it always
-connects back to whichever origin the page itself loaded from -no
-separate host/port to hand it. First visit over HTTPS: click through the
-browser's self-signed-certificate warning once (per browser/device).
+`controller-frontend` creates a small **local CA** on first start, and that
+CA signs the server certificate nginx presents. Both are kept in a volume,
+so they survive redeploys. Plain HTTP (`:8080`) and HTTPS (`:8445` in this
+compose file; see `docker-compose.yml`) are served side by side. Opening
+the intercom client over plain HTTP from anywhere but `localhost` redirects
+to HTTPS, because browsers only allow the microphone in a secure context.
+Nothing else needs configuring beyond `RTPENGINE_PUBLIC_IP` in `.env`, which
+is used as the certificate's IP entry. The client's SIP/WS signaling is
+proxied through the same nginx at `/ws`.
+
+**Trust the CA on each device** (once per device):
+- **iPad / iPhone**: open `http://<host>:8080/ca.crt` in Safari and allow
+  the profile download. Install it in Settings → *Profile Downloaded*, then
+  turn it on under Settings → General → About → *Certificate Trust
+  Settings*. Tapping through Safari's certificate warning is **not
+  enough**: WebKit doesn't extend that exception to WebSocket connections,
+  so the client's SIP line never connects ("connecting…" forever).
+- **Desktop browsers**: import `ca.crt` as a trusted authority, or click
+  through the warning (desktop Chrome/Firefox do allow the WebSocket after
+  that).
+
+The CA is name-constrained to `localhost`, `127.0.0.1` and
+`RTPENGINE_PUBLIC_IP`, so trusting it can't be used to impersonate any other
+site. The server certificate follows Apple's rules (825-day validity,
+server-auth usage) and is re-issued automatically within 30 days of expiry.
+If `RTPENGINE_PUBLIC_IP` changes, a new CA is generated and every device
+must install it again.
 
 ### Setting up an intercom client
 1. Console → **Directory Users** panel → create a person (name, extension,
