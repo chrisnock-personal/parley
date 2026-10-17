@@ -119,13 +119,13 @@ cp .env.example .env
 
 podman-compose up -d --build
 ```
-- Controller UI: `http://<host>:8080` or `https://<host>:8444` -sign in
-  with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`. (Host `8444`, not the
-  usual `8443` -see `docker-compose.yml`'s comment: `8443` collides with
-  another project on the reference lab host.)
+- Controller UI: `http://<host>:8080` or `https://<host>:8445` -sign in
+  with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`. (Host `8445`, not the
+  usual `8443` -see `docker-compose.yml`'s comment: `8443`/`8444` collide
+  with other projects on the reference lab host.)
 - Intercom Client: `http://<host>:8080/intercom-client/` (localhost only
   -`getUserMedia` needs a secure context, and `localhost` is
-  browser-exempted) or `https://<host>:8444/intercom-client/` (works from a
+  browser-exempted) or `https://<host>:8445/intercom-client/` (works from a
   genuinely separate machine too, once you click through the self-signed
   cert warning once per browser -see "TLS" below).
 - Controller API: `http://<host>:3100/api/v1/...`
@@ -157,7 +157,7 @@ entirely if you'd rather not take that tradeoff.
 ### TLS
 `controller-frontend` generates a self-signed cert on first start
 (persisted in a volume, so it survives redeploys -no new warning every
-time) and serves both plain HTTP (`:8080`) and HTTPS (`:8444` by default in
+time) and serves both plain HTTP (`:8080`) and HTTPS (`:8445` by default in
 this compose file -see `docker-compose.yml`'s comment) side by
 side; nothing extra to configure beyond `RTPENGINE_PUBLIC_IP` already
 being set in `.env` (reused as the cert's SAN entry). The intercom client's

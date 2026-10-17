@@ -119,11 +119,11 @@ services:
       - intercom-tls-certs:/etc/nginx/tls
     ports:
       - "8080:80"
-      # Host 8443 is taken on this machine by another project
-      # (callowl-frontend) -mapped to 8444 here instead; the container's
-      # own nginx still listens on 443 internally, only the host-side
-      # mapping changed.
-      - "8444:443"
+      # Host 8443 is taken on this machine by callowl-frontend and 8444 by
+      # callnest-frontend (8446 is Open Turret's) -mapped to 8445 here
+      # instead; the container's own nginx still listens on 443 internally,
+      # only the host-side mapping changed.
+      - "8445:443"
     restart: unless-stopped
 
   pbx-core:
