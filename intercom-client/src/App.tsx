@@ -117,129 +117,95 @@ function ActivityLight({ state }: { state: SlotState }) {
   return <span className={`activity${on ? ' activity-on' : ''}`} title={on ? 'Audio on this line' : 'Quiet'} />;
 }
 
-// Talk side, Eyevinn-style: a latching mute toggle plus a hold-to-talk
-// button for PTT while latched muted. Both drive CallManager.setMuted(). The
-// PTT button stays rendered while held (pttHeld), even though muted flips
-// to false underneath it -otherwise it would unmount mid-press and the
-// release would never arrive.
-function TalkControls({ state, onSetMuted }: { state: SlotState; onSetMuted: (muted: boolean) => void }) {
-  const [pttHeld, setPttHeld] = useState(false);
-  const release = () => {
-    if (!pttHeld) return;
-    setPttHeld(false);
-    onSetMuted(true);
-  };
-  return (
-    <>
-      {!pttHeld && (
-        <button className={state.muted ? 'mute-btn muted' : 'mute-btn talking'} onClick={() => onSetMuted(!state.muted)}>
-          {state.muted ? '🔇 Muted' : '🎙️ Talking'}
-        </button>
-      )}
-      {(state.muted || pttHeld) && (
-        <button
-          className={`ptt-btn${pttHeld ? ' ptt-live' : ''}`}
-          onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            setPttHeld(true);
-            onSetMuted(false);
-          }}
-          onPointerUp={release}
-          onPointerCancel={release}
-        >
-          {pttHeld ? '🎙️ Talking…' : 'Hold to talk'}
-        </button>
-      )}
-    </>
-  );
-}
-
-// Listen side: playback mute + volume for this slot only, nothing on the wire.
-function ListenControls({ state, onListenMute, onVolume }: {
-  state: SlotState; onListenMute: () => void; onVolume: (v: number) => void;
-}) {
-  return (
-    <div className="listen-controls">
-      <button className={state.listenMuted ? 'listen-btn listen-off' : 'listen-btn'} onClick={onListenMute}
-        title={state.listenMuted ? 'Listening muted' : 'Listening'}>
-        {state.listenMuted ? '🔈 Off' : '🔊'}
-      </button>
-      <input type="range" min={0} max={100} value={Math.round(state.volume * 100)}
-        disabled={state.listenMuted} onChange={(e) => onVolume(Number(e.target.value) / 100)} aria-label="Volume" />
-    </div>
-  );
-}
-
-function slotStatusText(state: SlotState): string {
-  if (state.status === 'idle') return 'idle';
-  return `${state.status}${state.label ? ` -${state.label}` : ''}${state.onHold ? ' (on hold)' : ''}`;
-}
-
 type SlotActions = {
   setMuted: (slot: SlotId, muted: boolean) => void;
   setListenMuted: (slot: SlotId, v: boolean) => void;
   setVolume: (slot: SlotId, v: number) => void;
 };
 
-// The direct-intercom (ICM) slot: one private 2-party call at a time, with
-// real SIP hold (pbx-core/src/reinvite.ts) and the auto-answer toggle.
-function IcmPanel({ state, actions, autoAnswer, onToggleAutoAnswer, onHold, onHangup }: {
-  state: SlotState; actions: SlotActions; autoAnswer: boolean; onToggleAutoAnswer: () => void;
-  onHold: () => void; onHangup: () => void;
-}) {
-  const live = state.status === 'connected';
-  return (
-    <div className={`slot slot-icm slot-${state.status}${state.muted ? ' slot-muted' : ''}${state.onHold ? ' slot-onhold' : ''}`}>
-      <div className="slot-head">
-        <ActivityLight state={state} />
-        <span className="slot-name">Intercom</span>
-        <label className="autoanswer-toggle">
-          <input type="checkbox" checked={autoAnswer} onChange={onToggleAutoAnswer} /> Auto-answer
-        </label>
-      </div>
-      <div className="slot-status">{slotStatusText(state)}</div>
-      {state.status !== 'idle' && (
-        <div className="slot-controls">
-          {/* Only meaningful once media is flowing -muting/holding during
-              'calling'/'ringing' has no confirmed dialog to act on yet. */}
-          {live && <TalkControls state={state} onSetMuted={(m) => actions.setMuted(ICM_SLOT, m)} />}
-          {live && (
-            <button className={state.onHold ? 'hold-btn on-hold' : 'hold-btn'} onClick={onHold}>
-              {state.onHold ? '▶ Resume' : '⏸ Hold'}
-            </button>
-          )}
-          <button onClick={onHangup}>Hang up</button>
-        </div>
-      )}
-      <ListenControls state={state} onListenMute={() => actions.setListenMuted(ICM_SLOT, !state.listenMuted)}
-        onVolume={(v) => actions.setVolume(ICM_SLOT, v)} />
-    </div>
-  );
-}
-
 function buttonLabel(b: Button): string {
   return b.label || (b.button_type === 'direct' ? (b.target_name || b.target_extension!) : b.target_group_name!);
 }
 
-// Direct-intercom keys: pressing one calls that extension on the ICM slot;
-// pressing the key of the call that's already up hangs it up.
-// Starting a call needs a registered line; hanging up the active one doesn't.
-function DirectKeys({ buttons, icm, lineUp, onPress }: {
-  buttons: Button[]; icm: SlotState; lineUp: boolean; onPress: (b: Button) => void;
+// The direct-intercom (ICM) card: one private 2-party call at a time, with
+// real SIP hold (pbx-core/src/reinvite.ts), the auto-answer toggle, and the
+// user's ICM keys as rows -press one to call that person, press the active
+// one (or Hang Up) to end it. Same card style as the groups, first in the grid.
+function IcmCard({ state, actions, keys, lineUp, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress }: {
+  state: SlotState; actions: SlotActions; keys: Button[]; lineUp: boolean;
+  autoAnswer: boolean; onToggleAutoAnswer: () => void; onHold: () => void; onHangup: () => void; onPress: (b: Button) => void;
 }) {
-  if (buttons.length === 0) return null;
+  const active = state.status !== 'idle';
+  const live = state.status === 'connected';
+  const activeKey = active ? keys.find((b) => state.counterpart === b.target_extension) : undefined;
+  const who = activeKey ? buttonLabel(activeKey) : state.counterpart;
   return (
-    <div className="key-grid">
-      {buttons.map((b) => {
-        const active = icm.status !== 'idle' && icm.counterpart === b.target_extension;
-        return (
-          <button key={b.id} className={`client-btn client-btn-direct${active ? ' client-btn-active' : ''}`}
-            disabled={!lineUp && !active} onClick={() => onPress(b)}>
-            <div className="btn-type">ICM · {b.target_extension}</div>
-            <div className="btn-label">{buttonLabel(b)}</div>
+    <div className={`group-card icm-card slot-${state.status}${state.onHold ? ' slot-onhold' : ''}`}>
+      <div className="card-head">
+        <ActivityLight state={state} />
+        <div className="card-title">
+          <div className="card-name">Intercom</div>
+          <div className="card-sub">
+            {active ? `${state.status}${who ? ` · ${who}` : ''}${state.onHold ? ' (on hold)' : ''}` : 'direct calls · idle'}
+          </div>
+        </div>
+        <label className="autoanswer-toggle" title="Answer incoming intercom calls automatically">
+          <input type="checkbox" checked={autoAnswer} onChange={onToggleAutoAnswer} /> Auto-answer
+        </label>
+      </div>
+
+      <div className="card-volume">
+        <button className={`icon-btn${state.listenMuted ? ' off' : ''}`} title={state.listenMuted ? 'Listening muted' : 'Mute listening'}
+          onClick={() => actions.setListenMuted(ICM_SLOT, !state.listenMuted)}>
+          <Icon name="volumeOff" size={20} />
+        </button>
+        <input type="range" min={0} max={100} value={Math.round(state.volume * 100)} disabled={state.listenMuted}
+          onChange={(e) => actions.setVolume(ICM_SLOT, Number(e.target.value) / 100)} aria-label="Volume" />
+        <span className="icon-static"><Icon name="volume" size={20} /></span>
+      </div>
+
+      {/* Mute/hold only mean something once media is flowing. */}
+      {live && (
+        <>
+          <div className="card-pair">
+            <button className={`pair-btn${state.listenMuted ? ' off' : ' on'}`} title={state.listenMuted ? 'Listening off' : 'Listening'}
+              onClick={() => actions.setListenMuted(ICM_SLOT, !state.listenMuted)}>
+              <Icon name={state.listenMuted ? 'volumeOff' : 'volume'} />
+            </button>
+            <button className={`pair-btn${state.muted ? ' off' : ' on'}`} title={state.muted ? 'Mic muted' : 'Mic open'}
+              onClick={() => actions.setMuted(ICM_SLOT, !state.muted)}>
+              <Icon name={state.muted ? 'micOff' : 'mic'} />
+            </button>
+          </div>
+          <button className={`ptt-wide${state.onHold ? ' held' : ''}`} onClick={onHold}>
+            {state.onHold ? 'Resume' : 'Hold'}
           </button>
-        );
-      })}
+        </>
+      )}
+
+      {keys.length > 0 && (
+        <div className="card-section">
+          <div className="card-section-label">Intercom keys</div>
+          <div className="card-section-body">
+            {keys.map((b) => {
+              const isActive = !!activeKey && activeKey.id === b.id;
+              return (
+                <button key={b.id} className={`participant-row key-row${isActive ? ' self' : ''}`}
+                  disabled={!lineUp && !isActive} onClick={() => onPress(b)}
+                  title={isActive ? 'Hang up' : `Call ${buttonLabel(b)}`}>
+                  <span className="avatar"><Icon name="user" size={14} /></span>
+                  <span className="key-name">{buttonLabel(b)}</span>
+                  <span className="key-ext">{isActive ? 'on call' : b.target_extension}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {active && (
+        <button className="card-leave" onClick={onHangup}>Hang Up <Icon name="leave" /></button>
+      )}
     </div>
   );
 }
@@ -719,30 +685,24 @@ export default function App() {
       )}
 
       <div className="client-body">
-        <section className="client-section">
-          <h2>Intercom</h2>
-          <IcmPanel
+        <div className="card-grid">
+          <IcmCard
             state={icm}
             actions={actions}
+            keys={directButtons}
+            lineUp={lineUp}
             autoAnswer={intercomAutoAnswer}
             onToggleAutoAnswer={() => setIntercomAutoAnswer((v) => !v)}
             onHold={() => managerRef.current.setHold(ICM_SLOT, !icm.onHold)}
             onHangup={() => managerRef.current.hangup(ICM_SLOT)}
+            onPress={handleDirectPress}
           />
-          <DirectKeys buttons={directButtons} icm={icm} lineUp={lineUp} onPress={handleDirectPress} />
-        </section>
-
-        <section className="client-section">
-          <h2>Groups</h2>
-          <div className="group-list">
-            {groupButtons.map((b) => (
-              <GroupStrip key={b.id} button={b} state={slotStates[lineSlot(b.target_group_dial_code!)] ?? idleSlot()}
-                actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
-                selfExt={session.extension} onToggleJoin={() => handleLineToggle(b)} />
-            ))}
-            {groupButtons.length === 0 && <div className="empty">No groups assigned yet.</div>}
-          </div>
-        </section>
+          {groupButtons.map((b) => (
+            <GroupStrip key={b.id} button={b} state={slotStates[lineSlot(b.target_group_dial_code!)] ?? idleSlot()}
+              actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
+              selfExt={session.extension} onToggleJoin={() => handleLineToggle(b)} />
+          ))}
+        </div>
         {session.buttons.length === 0 && <div className="empty">No buttons assigned yet.</div>}
       </div>
     </div>
