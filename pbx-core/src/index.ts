@@ -113,3 +113,8 @@ setInterval(() => {
 }, 30_000);
 
 process.on('SIGTERM', () => { srf.disconnect(); process.exit(0); });
+// Last line of defence: one call's stray promise rejection must never take
+// down every other call. Log it loudly instead of letting Node exit.
+process.on('unhandledRejection', (err: any) => {
+  console.error('[pbx-core] unhandled rejection (kept running):', err?.message || err);
+});

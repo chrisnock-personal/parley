@@ -40,6 +40,7 @@ export interface DirectoryUserButton {
   target_group_dial_code: string | null; // group buttons dial GROUP_PREFIX + this, e.g. "*8" + "floor-a"
   target_group_ptt_default: boolean | null; // group's PTT default -intercom client starts muted (PTT) or talking (open mic) accordingly
   target_group_transcribe_enabled: boolean | null; // group has live transcription on -client shows its transcript panel
+  target_name: string | null; // direct buttons: the target directory user's name, for the key label
   label: string | null;
   sort_order: number;
 }
@@ -160,9 +161,11 @@ export async function listButtons(directoryUserId: string): Promise<DirectoryUse
             g.name AS target_group_name, g.dial_code AS target_group_dial_code,
             g.ptt_default AS target_group_ptt_default,
             g.transcribe_enabled AS target_group_transcribe_enabled,
+            t.name AS target_name,
             b.label, b.sort_order
      FROM intercom_directory_user_buttons b
      LEFT JOIN intercom_groups g ON g.id = b.target_group_id
+     LEFT JOIN intercom_directory_users t ON b.button_type = 'direct' AND t.extension = b.target_extension
      WHERE b.directory_user_id = $1
      ORDER BY b.sort_order, b.created_at`,
     [directoryUserId]);

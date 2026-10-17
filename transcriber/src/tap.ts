@@ -2,9 +2,14 @@
 //
 // rtpengine's "subscribe request" for the member's own leg (their From tag)
 // hands us a copy of what they SEND -just their voice, never the group mix
-// -already decrypted from the browser's DTLS-SRTP. We answer with a local
-// UDP port and the best codec on offer (Opus, decoded straight to 16 kHz,
-// else G.711), then segment on pauses: a segment ends after `pauseMs` of
+// -already decrypted from the browser's DTLS-SRTP. The subscription only
+// offers the codec the leg actually uses -browser legs into a group
+// usually settle on G.722 (FreeSWITCH's pick) -and we take it as-is:
+// rtpengine 10.5 rejects any subscription answer that would need
+// transcoding ("Failed to process subscription answer"; pass-through
+// works), so we decode Opus, G.722 (g722.ts) and G.711 ourselves, all to
+// 16 kHz. We answer with a local UDP port and that codec, then segment on
+// pauses: a segment ends after `pauseMs` of
 // quiet following speech, or at `maxSegmentMs`. Muted (PTT) members send
 // silence, which never forms a segment, so they cost nothing.
 import dgram from 'dgram';
@@ -12,6 +17,7 @@ import { Decoder } from '@evan/opus';
 import Client from 'rtpengine-client';
 import { config } from './config';
 import { g711To16k, rms, SAMPLE_RATE } from './audio';
+import { G722Decoder } from './g722';
 
 const ng = new (Client as any).Client();
 
@@ -20,7 +26,7 @@ const FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS / 1000;
 const SPEECH_FRAME_RMS = 400;   // a 20 ms frame louder than this counts as speech
 const PREROLL_FRAMES = 15;      // keep 300 ms before speech starts, so first syllables aren't clipped
 
-type Codec = { pt: number; kind: 'opus' | 'pcmu' | 'pcma'; rtpmap: string };
+type Codec = { pt: number; kind: 'opus' | 'g722' | 'pcmu' | 'pcma'; rtpmap: string };
 
 export interface Utterance { pcm: Int16Array; spokenAt: Date }
 
@@ -29,6 +35,7 @@ function pickCodec(offer: string): Codec | null {
   const opus = rtpmaps.find((r) => /^opus\/48000/i.test(r.name));
   if (opus) return { pt: opus.pt, kind: 'opus', rtpmap: opus.name };
   const offered = offer.match(/^m=audio \d+ \S+ ([\d ]+)/m)?.[1].split(' ').map(Number) ?? [];
+  if (offered.includes(9)) return { pt: 9, kind: 'g722', rtpmap: 'G722/8000' };
   if (offered.includes(0)) return { pt: 0, kind: 'pcmu', rtpmap: 'PCMU/8000' };
   if (offered.includes(8)) return { pt: 8, kind: 'pcma', rtpmap: 'PCMA/8000' };
   return null;
@@ -39,6 +46,7 @@ export class MemberTap {
   private toTag: string | null = null;
   private codec: Codec | null = null;
   private opus: Decoder | null = null;
+  private g722: G722Decoder | null = null;
   private frames: Int16Array[] = [];   // current segment (incl. pre-roll)
   private pending = new Int16Array(0); // samples not yet making up a whole frame
   private speechFrames = 0;
@@ -63,12 +71,21 @@ export class MemberTap {
     if (req.result !== 'ok') throw new Error(`subscribe request: ${req['error-reason'] || req.result}`);
     this.toTag = req['to-tag'];
     this.codec = pickCodec(req.sdp);
-    if (!this.codec) throw new Error('no Opus or G.711 on offer');
+    if (!this.codec) throw new Error(`no Opus, G.722 or G.711 on offer: ${req.sdp.match(/^m=.*$/m)?.[0]}`);
     if (this.codec.kind === 'opus') this.opus = new Decoder({ channels: 1, sample_rate: SAMPLE_RATE });
+    if (this.codec.kind === 'g722') this.g722 = new G722Decoder();
 
+    // The answer must also accept telephone-event when it's on offer: rtpengine
+    // treats dropping it as a change it can't make on a subscription and
+    // rejects the whole answer. Its packets are ignored on receipt (onRtp).
+    const dtmf = req.sdp.match(/^a=rtpmap:(\d+) (telephone-event\/\d+)/m);
+    const dtmfFmtp = dtmf && req.sdp.match(new RegExp(`^a=fmtp:${dtmf[1]} [^\r\n]+`, 'm'));
     const answer = [
       'v=0', `o=- ${Date.now()} 1 IN IP4 ${config.mediaIp}`, 's=transcriber', `c=IN IP4 ${config.mediaIp}`, 't=0 0',
-      `m=audio ${port} RTP/AVP ${this.codec.pt}`, `a=rtpmap:${this.codec.pt} ${this.codec.rtpmap}`, 'a=recvonly', '',
+      `m=audio ${port} RTP/AVP ${this.codec.pt}${dtmf ? ` ${dtmf[1]}` : ''}`,
+      `a=rtpmap:${this.codec.pt} ${this.codec.rtpmap}`,
+      ...(dtmf ? [`a=rtpmap:${dtmf[1]} ${dtmf[2]}`, ...(dtmfFmtp ? [dtmfFmtp[0]] : [])] : []),
+      'a=recvonly', '',
     ].join('\r\n');
     const ans = await ng.subscribeAnswer(config.rtpengine.port, config.rtpengine.host, {
       'call-id': this.callId, 'to-tag': this.toTag, sdp: answer,
@@ -92,6 +109,8 @@ export class MemberTap {
       if (this.opus) {
         const out = this.opus.decode(payload);
         pcm = new Int16Array(out.buffer, out.byteOffset, out.byteLength >> 1).slice();
+      } else if (this.g722) {
+        pcm = this.g722.decode(payload);
       } else {
         pcm = g711To16k(payload, this.codec.kind === 'pcma');
       }

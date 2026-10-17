@@ -70,8 +70,14 @@ export function registerDirectIntercom(srf: Srf) {
       ]);
 
       const teardown = () => { recording.stop(); rtp.del(callId, fromTag); calls.end(callId); };
-      uas.on('destroy', () => { uac.destroy(); teardown(); });
-      uac.on('destroy', () => { uas.destroy(); teardown(); });
+      // When one leg hangs up, hang up the other. Both can end at nearly the
+      // same moment (e.g. a member leaves just as FreeSWITCH drops them), and
+      // then the second destroy() targets a dialog drachtio has already
+      // removed and rejects -expected, so swallowed. Uncaught, it crashed
+      // pbx-core (Node exits on unhandled rejections), dropping every call.
+      const hangUp = (dlg: any) => dlg.destroy().catch(() => { /* already gone */ });
+      uas.on('destroy', () => { hangUp(uac); teardown(); });
+      uac.on('destroy', () => { hangUp(uas); teardown(); });
 
       // Live-view bookkeeping (console's "Live" tab, client participant
       // lists) -not used for any routing decision. See calls.ts.

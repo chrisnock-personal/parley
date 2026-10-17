@@ -218,7 +218,7 @@ function IcmPanel({ state, actions, autoAnswer, onToggleAutoAnswer, onHold, onHa
 }
 
 function buttonLabel(b: Button): string {
-  return b.label || (b.button_type === 'direct' ? b.target_extension! : b.target_group_name!);
+  return b.label || (b.button_type === 'direct' ? (b.target_name || b.target_extension!) : b.target_group_name!);
 }
 
 // Direct-intercom keys: pressing one calls that extension on the ICM slot;
@@ -286,49 +286,141 @@ function TranscriptPanel({ dialCode, selfExt }: { dialCode: string; selfExt: str
   );
 }
 
-// One strip per assigned group, joined or not -Eyevinn's "lines in a
-// production" view. Any number can be joined at once, each with its own
-// talk and listen controls, and each lists who's in it right now.
+// Small inline icons (Lucide-style strokes) -no icon library dependency.
+const ICON_PATHS: Record<string, string> = {
+  user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8',
+  users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8 M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75',
+  chevron: 'M6 9l6 6l6-6',
+  volume: 'M11 5L6 9H2v6h4l5 4V5z M15.54 8.46a5 5 0 0 1 0 7.07 M19.07 4.93a10 10 0 0 1 0 14.14',
+  volumeOff: 'M11 5L6 9H2v6h4l5 4V5z M22 9l-6 6 M16 9l6 6',
+  mic: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v3',
+  micOff: 'M2 2l20 20 M18.89 13.23A7 7 0 0 0 19 12v-2 M5 10v2a7 7 0 0 0 12 5 M15 9.34V5a3 3 0 0 0-5.68-1.33 M9 9v3a3 3 0 0 0 5.12 2.12 M12 19v3',
+  leave: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5l-5-5 M21 12H9',
+  join: 'M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4 M10 17l5-5l-5-5 M15 12H3',
+};
+function Icon({ name, size = 16 }: { name: keyof typeof ICON_PATHS; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {ICON_PATHS[name].split(' M').map((d, i) => <path key={i} d={i ? `M${d}` : d} />)}
+    </svg>
+  );
+}
+
+// A titled, collapsible section of a group card -collapsed by default.
+function Section({ title, extra, children }: { title: string; extra?: React.ReactNode; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`card-section${open ? ' open' : ''}`}>
+      <button className="card-section-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span>{title}</span>
+        {extra}
+        <span className="chevron"><Icon name="chevron" /></span>
+      </button>
+      {open && <div className="card-section-body">{children}</div>}
+    </div>
+  );
+}
+
+// One card per assigned group, joined or not -laid out like Eyevinn's
+// open intercom call cards: header with a participant count, volume row,
+// talk controls once joined, then collapsible Participants and (for
+// transcribed groups) Transcript sections, and Join / Leave at the bottom.
 function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onToggleJoin }: {
   button: Button; state: SlotState; actions: SlotActions; lineUp: boolean;
   participants: GroupParticipant[] | undefined; selfExt: string; onToggleJoin: () => void;
 }) {
   const slot = lineSlot(button.target_group_dial_code!);
   const joined = state.status !== 'idle';
-  const [showTranscript, setShowTranscript] = useState(false);
   const live = state.status === 'connected';
+  const [pttHeld, setPttHeld] = useState(false);
+  const releasePtt = () => {
+    if (!pttHeld) return;
+    setPttHeld(false);
+    actions.setMuted(slot, true);
+  };
+  const count = participants?.length ?? 0;
+
   return (
-    <div className={`slot slot-line slot-${state.status}${state.muted ? ' slot-muted' : ''}`}>
-      <div className="slot-head">
+    <div className={`group-card slot-${state.status}${state.muted ? ' slot-muted' : ''}`}>
+      <div className="card-head">
         <ActivityLight state={state} />
-        <span className="slot-name">{buttonLabel(button)}</span>
-        <span className="btn-type">GRP · {GROUP_PREFIX}{button.target_group_dial_code}</span>
-      </div>
-      <div className="slot-status">{joined ? slotStatusText(state) : (button.target_group_ptt_default ? 'not joined · PTT group' : 'not joined')}</div>
-      {participants && (
-        <div className="participants">
-          {participants.length === 0
-            ? <span className="participants-empty">nobody in this group</span>
-            : participants.map((p) => (
-              <span key={p.extension} className={`participant${p.extension === selfExt ? ' participant-self' : ''}`}
-                title={`ext ${p.extension}`}>
-                {p.name}{p.extension === selfExt ? ' (you)' : ''}
-              </span>
-            ))}
+        <div className="card-title">
+          <div className="card-name">{buttonLabel(button)}</div>
+          <div className="card-sub">
+            {GROUP_PREFIX}{button.target_group_dial_code}
+            {' · '}
+            {joined
+              ? `${state.status}${state.onHold ? ' (on hold)' : ''}`
+              : (button.target_group_ptt_default ? 'not joined · PTT' : 'not joined')}
+          </div>
         </div>
-      )}
-      <div className="slot-controls">
-        <button className={joined ? 'leave-btn' : 'join-btn'} disabled={!joined && !lineUp} onClick={onToggleJoin}>{joined ? 'Leave' : 'Join'}</button>
-        {button.target_group_transcribe_enabled && (
-          <button className={showTranscript ? 'transcript-btn open' : 'transcript-btn'} onClick={() => setShowTranscript((v) => !v)}>
-            📝 Transcript
-          </button>
-        )}
-        {live && <TalkControls state={state} onSetMuted={(m) => actions.setMuted(slot, m)} />}
+        <span className={`card-count${count ? ' has' : ''}`} title={`${count} in this group`}>
+          <Icon name="users" size={14} /> {count}
+        </span>
       </div>
-      <ListenControls state={state} onListenMute={() => actions.setListenMuted(slot, !state.listenMuted)}
-        onVolume={(v) => actions.setVolume(slot, v)} />
-      {showTranscript && <TranscriptPanel dialCode={button.target_group_dial_code!} selfExt={selfExt} />}
+
+      <div className="card-volume">
+        <button className={`icon-btn${state.listenMuted ? ' off' : ''}`} title={state.listenMuted ? 'Listening muted' : 'Mute listening'}
+          onClick={() => actions.setListenMuted(slot, !state.listenMuted)}>
+          <Icon name="volumeOff" size={20} />
+        </button>
+        <input type="range" min={0} max={100} value={Math.round(state.volume * 100)} disabled={state.listenMuted}
+          onChange={(e) => actions.setVolume(slot, Number(e.target.value) / 100)} aria-label="Volume" />
+        <span className="icon-static"><Icon name="volume" size={20} /></span>
+      </div>
+
+      {live && (
+        <>
+          <div className="card-pair">
+            <button className={`pair-btn${state.listenMuted ? ' off' : ' on'}`} title={state.listenMuted ? 'Listening off' : 'Listening'}
+              onClick={() => actions.setListenMuted(slot, !state.listenMuted)}>
+              <Icon name={state.listenMuted ? 'volumeOff' : 'volume'} />
+            </button>
+            <button className={`pair-btn${state.muted && !pttHeld ? ' off' : ' on'}`} title={state.muted ? 'Mic muted -click to latch it open' : 'Mic open -click to mute'}
+              onClick={() => actions.setMuted(slot, !state.muted)}>
+              <Icon name={state.muted && !pttHeld ? 'micOff' : 'mic'} />
+            </button>
+          </div>
+          <button
+            className={`ptt-wide${pttHeld ? ' live' : ''}`}
+            disabled={!state.muted && !pttHeld}
+            onPointerDown={(e) => {
+              if (!state.muted) return;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              setPttHeld(true);
+              actions.setMuted(slot, false);
+            }}
+            onPointerUp={releasePtt}
+            onPointerCancel={releasePtt}
+          >
+            {pttHeld ? 'Talking…' : state.muted ? 'Push To Talk' : 'Mic latched open'}
+          </button>
+        </>
+      )}
+
+      {participants && (
+        <Section title="Participants">
+          {participants.length === 0
+            ? <div className="participants-empty">Nobody in this group</div>
+            : participants.map((p) => (
+              <div key={p.extension} className={`participant-row${p.extension === selfExt ? ' self' : ''}`} title={`ext ${p.extension}`}>
+                <span className="avatar"><Icon name="user" size={14} /></span>
+                <span>{p.name}{p.extension === selfExt ? ' (you)' : ''}</span>
+              </div>
+            ))}
+        </Section>
+      )}
+
+      {button.target_group_transcribe_enabled && (
+        <Section title="Transcript">
+          <TranscriptPanel dialCode={button.target_group_dial_code!} selfExt={selfExt} />
+        </Section>
+      )}
+
+      <button className={joined ? 'card-leave' : 'card-join'} disabled={!joined && !lineUp} onClick={onToggleJoin}>
+        {joined ? <>Leave Call <Icon name="leave" /></> : <>Join <Icon name="join" /></>}
+      </button>
     </div>
   );
 }

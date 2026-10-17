@@ -17,6 +17,10 @@ interface LiveCall { callId: string; kind: 'direct' | 'group'; from: string; to:
 
 const taps = new Map<string, MemberTap>();
 const starting = new Set<string>();
+// callId -> when a failed tap may be retried, so a leg we can't tap isn't
+// re-subscribed (and logged) every poll.
+const retryAfter = new Map<string, number>();
+const RETRY_MS = 30_000;
 
 async function handleUtterance(call: LiveCall, groupId: string, u: Utterance) {
   const text = await transcribe(u.pcm);
@@ -47,14 +51,20 @@ async function tick() {
   for (const [callId, tap] of taps) {
     if (!wanted.has(callId)) { taps.delete(callId); void tap.stop(); }
   }
+  for (const callId of retryAfter.keys()) if (!wanted.has(callId)) retryAfter.delete(callId);
   for (const [callId, call] of wanted) {
     if (taps.has(callId) || starting.has(callId)) continue;
+    if ((retryAfter.get(callId) ?? 0) > Date.now()) continue;
     const groupId = groups.get(call.to)!;
     const tap = new MemberTap(callId, call.callerTag, (u) => void handleUtterance(call, groupId, u));
     starting.add(callId);
     tap.start()
       .then(() => { taps.set(callId, tap); console.log(`[tap] ${call.from} in ${call.to}`); })
-      .catch((err) => { console.error(`[tap] ${call.from} in ${call.to} failed: ${err.message}`); void tap.stop(); })
+      .catch((err) => {
+        console.error(`[tap] ${call.from} in ${call.to} failed (retrying in ${RETRY_MS / 1000}s): ${err.message}`);
+        retryAfter.set(callId, Date.now() + RETRY_MS);
+        void tap.stop();
+      })
       .finally(() => starting.delete(callId));
   }
 }

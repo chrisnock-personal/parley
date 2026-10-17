@@ -11,6 +11,7 @@ export interface Button {
   target_group_dial_code: string | null;
   target_group_ptt_default: boolean | null;
   target_group_transcribe_enabled: boolean | null;
+  target_name: string | null; // direct buttons: who that extension belongs to
   label: string | null;
   sort_order: number;
 }
