@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, BackupInfo, DbStats } from './api';
+import { api, BackupInfo, DbStats, PurgeableTable } from './api';
 
 export default function DatabasePanel({ onError }: { onError: (msg: string) => void }) {
   const [info, setInfo] = useState<BackupInfo | null>(null);
   const [stats, setStats] = useState<DbStats | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [purgeTable, setPurgeTable] = useState<'audit_log' | 'intercom_sessions'>('audit_log');
+  const [purgeTable, setPurgeTable] = useState<PurgeableTable>('audit_log');
   const [purgeDays, setPurgeDays] = useState(90);
   const [archiveDays, setArchiveDays] = useState(90);
   const [transferType, setTransferType] = useState<'local' | 'scp' | 'none'>('none');
@@ -114,9 +114,10 @@ export default function DatabasePanel({ onError }: { onError: (msg: string) => v
       <h2>Retention / Purge</h2>
       <div className="field">
         <label>Table</label>
-        <select value={purgeTable} onChange={e => setPurgeTable(e.target.value as 'audit_log' | 'intercom_sessions')}>
+        <select value={purgeTable} onChange={e => setPurgeTable(e.target.value as PurgeableTable)}>
           <option value="audit_log">audit_log</option>
           <option value="intercom_sessions">intercom_sessions (never touches active calls)</option>
+          <option value="intercom_transcript_lines">intercom_transcript_lines (also pruned automatically -see Settings)</option>
         </select>
       </div>
       <div className="field">

@@ -224,6 +224,35 @@ services:
       FREESWITCH_BIND_IP: ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
     restart: unless-stopped
 
+  # Live per-group transcription (groups with "Transcribe" on in the
+  # console). Taps each member's own voice from rtpengine (subscribe
+  # request), segments it on pauses and sends it to a whisper.cpp
+  # whisper-server, storing attributed lines for the intercom client's
+  # transcript panel. Idle cost is one small poll loop. WHISPER_URL defaults
+  # to the shared instance on this host (CallNest's callnest-whisper) -never
+  # start a second model server here.
+  transcriber:
+    build:
+      context: ./transcriber
+      dockerfile: Containerfile
+    container_name: intercom-transcriber
+    network_mode: host   # receives RTP from rtpengine on local ports; reaches pbx-core/rtpengine/whisper on this host
+    environment:
+      PBX_STATUS_URL: "http://127.0.0.1:9080/status"
+      RTPENGINE_HOST: "127.0.0.1"
+      RTPENGINE_PORT: "22222"
+      MEDIA_IP:       ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
+      WHISPER_URL:    ${WHISPER_URL:-http://127.0.0.1:8090}
+      PGHOST:     "127.0.0.1"
+      PGPORT:     "5433"
+      PGDATABASE: ${PGDATABASE:-intercom}
+      PGUSER:     ${PGUSER:-intercom_user}
+      PGPASSWORD: ${PGPASSWORD:-intercom_pass}
+    depends_on:
+      - pbx-core
+      - postgres
+    restart: unless-stopped
+
 volumes:
   intercom-pgdata:
   intercom-tls-certs:

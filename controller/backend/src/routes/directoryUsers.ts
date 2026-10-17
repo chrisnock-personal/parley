@@ -25,6 +25,11 @@ router.get('/:id', async (req, res, next) => {
 
 router.patch('/:id', requireRole('admin', 'editor'), async (req, res, next) => {
   try {
+    // Turning someone's recording on or off is a compliance decision, so
+    // admin-only even though editors can change everything else here.
+    if (req.body?.siprec_enabled !== undefined && req.user!.role !== 'admin') {
+      return res.status(403).json({ error: 'Only an admin can change call recording' });
+    }
     const u = await directoryUsers.updateDirectoryUser(req.user!.email, req.params.id, req.body ?? {});
     await audit(req.user!.email, 'directory_user', u.id, 'update', req.body);
     res.json(u);

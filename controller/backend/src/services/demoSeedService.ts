@@ -12,12 +12,13 @@ import * as dirUsers from './directoryUserService';
 
 const ACTOR = 'demo-seed';
 
-interface DemoGroup { dial_code: string; name: string; description: string; ptt_default: boolean }
+interface DemoGroup { dial_code: string; name: string; description: string; ptt_default: boolean; transcribe?: boolean }
 interface DemoUser { extension: string; name: string; icm: string[]; groups: string[] }
 
 // ptt_default: true = joins muted (hold-to-talk); false = open mic.
 const GROUPS: DemoGroup[] = [
-  { dial_code: 'production', name: 'Production', description: 'Director, producer and gallery -open talkback', ptt_default: false },
+  // Transcribed, so the demo shows live transcription without any setup.
+  { dial_code: 'production', name: 'Production', description: 'Director, producer and gallery -open talkback', ptt_default: false, transcribe: true },
   { dial_code: 'cameras', name: 'Cameras', description: 'Director to camera ops -PTT', ptt_default: true },
   { dial_code: 'engineering', name: 'Engineering', description: 'Vision, audio and graphics -open talkback', ptt_default: false },
   { dial_code: 'floor', name: 'Studio Floor', description: 'Gallery to floor manager -PTT', ptt_default: true },
@@ -44,6 +45,7 @@ export async function seedDemoData(): Promise<void> {
     const existing = await groups.getGroupByDialCode(g.dial_code);
     if (existing) { groupIds.set(g.dial_code, existing.id); continue; }
     const created = await groups.createGroup(ACTOR, g);
+    if (g.transcribe) await groups.updateGroup(ACTOR, created.id, { transcribe_enabled: true });
     groupIds.set(g.dial_code, created.id);
     groupsCreated++;
   }

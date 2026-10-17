@@ -6,6 +6,7 @@ import {
 import HealthPanel from './HealthPanel';
 import AuditPanel from './AuditPanel';
 import DatabasePanel from './DatabasePanel';
+import SettingsPanel from './SettingsPanel';
 
 // ── Login ──────────────────────────────────────────────────────────────────
 function Login({ onLoggedIn }: { onLoggedIn: (u: SessionUser) => void }) {
@@ -151,6 +152,7 @@ function GroupsPanel({
   const [editName, setEditName] = useState('');
   const [editMode, setEditMode] = useState<'talkback' | 'announce'>('talkback');
   const [editPttDefault, setEditPttDefault] = useState(false);
+  const [editTranscribe, setEditTranscribe] = useState(false);
 
   const refreshGroups = useCallback(async () => {
     try { setGroups(await api.listGroups()); } catch (err) { onError((err as Error).message); }
@@ -168,6 +170,7 @@ function GroupsPanel({
       setEditName(g.name);
       setEditMode(g.mode);
       setEditPttDefault(g.ptt_default);
+      setEditTranscribe(g.transcribe_enabled);
     }
   }, [selected, groups]);
 
@@ -206,7 +209,7 @@ function GroupsPanel({
     if (!selected) return;
     setBusy(true);
     try {
-      await api.updateGroup(selected, { name: editName.trim(), mode: editMode, ptt_default: editPttDefault });
+      await api.updateGroup(selected, { name: editName.trim(), mode: editMode, ptt_default: editPttDefault, transcribe_enabled: editTranscribe });
       await refreshGroups();
     } catch (err) { onError((err as Error).message); }
     finally { setBusy(false); }
@@ -282,6 +285,10 @@ function GroupsPanel({
                 <input type="checkbox" checked={editPttDefault} onChange={e => setEditPttDefault(e.target.checked)} />
                 PTT default (members start muted -push to talk -instead of open mic)
               </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, margin: '8px 0' }}>
+                <input type="checkbox" checked={editTranscribe} onChange={e => setEditTranscribe(e.target.checked)} />
+                Transcribe (live, per speaker -anyone with this group can read it without joining)
+              </label>
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 <button className="ghost" disabled={busy || !editName.trim()} onClick={saveGroup}>Save changes</button>
                 <button className="link" disabled={busy} onClick={deleteGroup}>Delete group</button>
@@ -313,7 +320,7 @@ function GroupsPanel({
 }
 
 // ── Directory users (intercom client login + button assignments) ─────────────
-function DirectoryUsersPanel({ onError }: { onError: (msg: string) => void }) {
+function DirectoryUsersPanel({ onError, isAdmin }: { onError: (msg: string) => void; isAdmin: boolean }) {
   const [users, setUsers] = useState<DirectoryUser[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -330,6 +337,7 @@ function DirectoryUsersPanel({ onError }: { onError: (msg: string) => void }) {
   const [editName, setEditName] = useState('');
   const [editExtension, setEditExtension] = useState('');
   const [editEnabled, setEditEnabled] = useState(true);
+  const [editSiprec, setEditSiprec] = useState(false);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
 
   const refreshUsers = useCallback(async () => {
@@ -349,6 +357,7 @@ function DirectoryUsersPanel({ onError }: { onError: (msg: string) => void }) {
       setEditName(u.name);
       setEditExtension(u.extension);
       setEditEnabled(u.enabled);
+      setEditSiprec(u.siprec_enabled);
     }
     setResetPasswordValue(''); // never carry a typed password across a selection change
   }, [selected, users]);
@@ -394,7 +403,11 @@ function DirectoryUsersPanel({ onError }: { onError: (msg: string) => void }) {
     if (!selected) return;
     setBusy(true);
     try {
-      await api.updateDirectoryUser(selected, { name: editName.trim(), extension: editExtension.trim(), enabled: editEnabled });
+      await api.updateDirectoryUser(selected, {
+        name: editName.trim(), extension: editExtension.trim(), enabled: editEnabled,
+        // Recording is admin-only server-side; don't send it otherwise.
+        ...(isAdmin ? { siprec_enabled: editSiprec } : {}),
+      });
       await refreshUsers();
     } catch (err) { onError((err as Error).message); }
     finally { setBusy(false); }
@@ -471,6 +484,11 @@ function DirectoryUsersPanel({ onError }: { onError: (msg: string) => void }) {
                 <input type="checkbox" checked={editEnabled} onChange={e => setEditEnabled(e.target.checked)} />
                 Enabled (can log in and register from the intercom client)
               </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, margin: '8px 0' }}
+                title={isAdmin ? undefined : 'Only an admin can change call recording'}>
+                <input type="checkbox" checked={editSiprec} disabled={!isAdmin} onChange={e => setEditSiprec(e.target.checked)} />
+                Record calls (SIP-REC, to the recording server in Settings)
+              </label>
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 <button className="ghost" disabled={busy || !editName.trim() || !editExtension.trim()} onClick={saveUser}>Save changes</button>
                 <button className="link" disabled={busy} onClick={deleteUser}>Delete user</button>
@@ -537,11 +555,12 @@ function DirectoryUsersPanel({ onError }: { onError: (msg: string) => void }) {
 }
 
 // ── App shell ────────────────────────────────────────────────────────────────
-type View = 'live' | 'groups' | 'directory-users' | 'health' | 'audit' | 'database';
+type View = 'live' | 'groups' | 'directory-users' | 'settings' | 'health' | 'audit' | 'database';
 const NAV_ITEMS: { id: View; label: string; adminOnly?: boolean }[] = [
   { id: 'live', label: 'Live' },
   { id: 'groups', label: 'Groups' },
   { id: 'directory-users', label: 'Directory Users' },
+  { id: 'settings', label: 'Settings', adminOnly: true },
   { id: 'health', label: 'Health', adminOnly: true },
   { id: 'audit', label: 'Audit', adminOnly: true },
   { id: 'database', label: 'Database', adminOnly: true },
@@ -635,8 +654,9 @@ export default function App() {
           />
         )}
 
-        {view === 'directory-users' && <DirectoryUsersPanel onError={setError} />}
+        {view === 'directory-users' && <DirectoryUsersPanel onError={setError} isAdmin={user.role === 'admin'} />}
 
+        {view === 'settings' && <SettingsPanel onError={setError} />}
         {view === 'health' && <HealthPanel onError={setError} />}
         {view === 'audit' && <AuditPanel onError={setError} />}
         {view === 'database' && <DatabasePanel onError={setError} />}

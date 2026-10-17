@@ -25,6 +25,7 @@ export interface DirectoryUser {
   name: string;
   extension: string;
   enabled: boolean;
+  siprec_enabled: boolean; // SIP-REC: pbx-core records this user's calls (migration 013)
   created_at: string;
   updated_at: string;
 }
@@ -38,11 +39,12 @@ export interface DirectoryUserButton {
   target_group_name: string | null;
   target_group_dial_code: string | null; // group buttons dial GROUP_PREFIX + this, e.g. "*8" + "floor-a"
   target_group_ptt_default: boolean | null; // group's PTT default -intercom client starts muted (PTT) or talking (open mic) accordingly
+  target_group_transcribe_enabled: boolean | null; // group has live transcription on -client shows its transcript panel
   label: string | null;
   sort_order: number;
 }
 
-const PUBLIC_COLUMNS = 'id, name, extension, enabled, created_at, updated_at';
+const PUBLIC_COLUMNS = 'id, name, extension, enabled, siprec_enabled, created_at, updated_at';
 
 /** pbx-core's registrar is one flat in-memory AOR namespace shared by
  * intercom_endpoints.aor and directory-user extensions -reject a collision
@@ -95,12 +97,13 @@ export async function createDirectoryUser(
 }
 
 export async function updateDirectoryUser(
-  actor: string, id: string, fields: { name?: string; extension?: string; enabled?: boolean }
+  actor: string, id: string, fields: { name?: string; extension?: string; enabled?: boolean; siprec_enabled?: boolean }
 ): Promise<DirectoryUser> {
   const current = await getDirectoryUser(id);
   const name = fields.name ?? current.name;
   const extension = fields.extension ?? current.extension;
   const enabled = fields.enabled ?? current.enabled;
+  const siprecEnabled = fields.siprec_enabled ?? current.siprec_enabled;
   const extensionChanged = !!fields.extension && fields.extension !== current.extension;
   if (extensionChanged) {
     await assertExtensionAvailable(fields.extension!, id);
@@ -116,10 +119,10 @@ export async function updateDirectoryUser(
   // should surface that, not silently swallow it.
   const u = await queryOne<DirectoryUser>(
     `UPDATE intercom_directory_users
-     SET name = $1, extension = $2, enabled = $3, updated_by = $4
+     SET name = $1, extension = $2, enabled = $3, siprec_enabled = $4, updated_by = $5
          ${extensionChanged ? ', sip_ha1 = NULL' : ''}
-     WHERE id = $5 RETURNING ${PUBLIC_COLUMNS}`,
-    [name, extension, enabled, actor, id]);
+     WHERE id = $6 RETURNING ${PUBLIC_COLUMNS}`,
+    [name, extension, enabled, siprecEnabled, actor, id]);
   if (!u) throw createError('Directory user not found', 404);
   return u;
 }
@@ -156,6 +159,7 @@ export async function listButtons(directoryUserId: string): Promise<DirectoryUse
     `SELECT b.id, b.directory_user_id, b.button_type, b.target_extension, b.target_group_id,
             g.name AS target_group_name, g.dial_code AS target_group_dial_code,
             g.ptt_default AS target_group_ptt_default,
+            g.transcribe_enabled AS target_group_transcribe_enabled,
             b.label, b.sort_order
      FROM intercom_directory_user_buttons b
      LEFT JOIN intercom_groups g ON g.id = b.target_group_id

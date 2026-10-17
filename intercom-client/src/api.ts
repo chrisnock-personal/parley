@@ -10,8 +10,17 @@ export interface Button {
   target_group_name: string | null;
   target_group_dial_code: string | null;
   target_group_ptt_default: boolean | null;
+  target_group_transcribe_enabled: boolean | null;
   label: string | null;
   sort_order: number;
+}
+
+export interface TranscriptLine {
+  id: string;
+  speaker_extension: string;
+  speaker_name: string | null;
+  text: string;
+  spoken_at: string;
 }
 
 export interface GroupParticipant {
@@ -64,6 +73,11 @@ export const api = {
     return req('/logout', { method: 'POST' }).catch(() => {});
   },
   isLoggedIn() { return !!token; },
+
+  // A group's live transcript; `after` = last line id seen, for polling.
+  groupTranscript(dialCode: string, after?: string): Promise<{ transcribing: boolean; lines: TranscriptLine[] }> {
+    return req(`/groups/${encodeURIComponent(dialCode)}/transcript${after ? `?after=${after}` : ''}`);
+  },
 
   // dial code -> who's in that group right now (see the backend route).
   groupParticipants(): Promise<{ participants: Record<string, GroupParticipant[]> }> {

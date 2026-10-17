@@ -21,6 +21,8 @@ import intercomClientRoutes from './routes/intercomClient';
 import liveRoutes from './routes/live';
 import systemRoutes from './routes/system';
 import adminRoutes from './routes/admin';
+import settingsRoutes from './routes/settings';
+import { startTranscriptRetention } from './services/transcriptService';
 
 async function main() {
   console.log('[startup] Waiting for PostgreSQL...');
@@ -49,12 +51,14 @@ async function main() {
   app.use('/api/v1/live', liveRoutes);
   app.use('/api/v1/system', systemRoutes);
   app.use('/api/v1/admin', adminRoutes);
+  app.use('/api/v1/settings', settingsRoutes);
 
   app.get('/health', (_req, res) => res.json({ status: 'ok', version: '0.1.0' }));
 
   app.use(errorHandler);
 
   startHealthScheduler();
+  startTranscriptRetention();
 
   let shuttingDown = false;
   async function shutdown(signal: string) {

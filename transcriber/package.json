@@ -1,0 +1,22 @@
+{
+  "name": "intercom-transcriber",
+  "version": "0.1.0",
+  "description": "Live per-group transcription for Open Intercom: taps each member's voice from rtpengine and transcribes it with whisper",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@evan/opus": "^1.0.3",
+    "debug": "^4.4.3",
+    "pg": "^8.13.0",
+    "rtpengine-client": "^0.4.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "@types/pg": "^8.11.10",
+    "@types/rtpengine-client": "^0.4.0",
+    "typescript": "^5.6.0"
+  }
+}

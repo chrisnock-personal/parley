@@ -6,6 +6,7 @@ import { authenticateDirectoryUser, listButtons } from '../services/directoryUse
 import { audit } from '../services/auditService';
 import { recordIntercomClientCallStart, recordIntercomClientCallEnd } from '../services/pbxService';
 import { getLiveStatus } from '../services/pbxCoreService';
+import { listLines } from '../services/transcriptService';
 
 const router = Router();
 
@@ -62,6 +63,21 @@ router.get('/groups/participants', requireIntercomClientAuth, async (req, res, n
       if (c.kind === 'group' && mine.has(c.to)) participants[c.to].push({ extension: c.from, name: c.fromName });
     }
     res.json({ participants });
+  } catch (err) { next(err); }
+});
+
+// A group's live transcript (written by the transcriber service), readable
+// by anyone with a button for that group whether or not they've joined it.
+// `?after=<id>` returns only newer lines -the client polls this way.
+// `transcribing` tells the client whether to show the panel at all.
+router.get('/groups/:code/transcript', requireIntercomClientAuth, async (req, res, next) => {
+  try {
+    const buttons = await listButtons(req.intercomClientUser!.id);
+    const button = buttons.find((b) => b.button_type === 'group' && b.target_group_dial_code === req.params.code);
+    if (!button?.target_group_id) return res.status(404).json({ error: 'Not one of your groups' });
+    const after = typeof req.query.after === 'string' && /^\d+$/.test(req.query.after) ? req.query.after : undefined;
+    const lines = await listLines(button.target_group_id, after);
+    res.json({ transcribing: !!button.target_group_transcribe_enabled, lines });
   } catch (err) { next(err); }
 });
 

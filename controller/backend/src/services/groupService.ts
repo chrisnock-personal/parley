@@ -9,6 +9,7 @@ export interface Group {
   mode: 'talkback' | 'announce';
   ptt_default: boolean;
   dial_code: string;
+  transcribe_enabled: boolean; // live transcription by the transcriber service (migration 013)
   created_at: string;
   updated_at: string;
 }
@@ -61,7 +62,7 @@ export async function createGroup(
 export async function updateGroup(
   actor: string,
   id: string,
-  fields: { name?: string; description?: string; mode?: 'talkback' | 'announce'; ptt_default?: boolean; dial_code?: string }
+  fields: { name?: string; description?: string; mode?: 'talkback' | 'announce'; ptt_default?: boolean; dial_code?: string; transcribe_enabled?: boolean }
 ): Promise<Group> {
   const current = await getGroup(id);
   const name = fields.name ?? current.name;
@@ -69,11 +70,13 @@ export async function updateGroup(
   const mode = fields.mode ?? current.mode;
   const pttDefault = fields.ptt_default ?? current.ptt_default;
   const dialCode = fields.dial_code?.trim() || current.dial_code;
+  const transcribe = fields.transcribe_enabled ?? current.transcribe_enabled;
 
   const g = await queryOne<Group>(
-    `UPDATE intercom_groups SET name = $1, description = $2, mode = $3, ptt_default = $4, dial_code = $5, updated_by = $6
-     WHERE id = $7 RETURNING *`,
-    [name, description, mode, pttDefault, dialCode, actor, id]
+    `UPDATE intercom_groups SET name = $1, description = $2, mode = $3, ptt_default = $4, dial_code = $5,
+            transcribe_enabled = $6, updated_by = $7
+     WHERE id = $8 RETURNING *`,
+    [name, description, mode, pttDefault, dialCode, transcribe, actor, id]
   );
   if (!g) throw createError('Group not found', 404);
   return g;

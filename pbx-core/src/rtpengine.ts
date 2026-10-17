@@ -124,3 +124,41 @@ export async function del(callId: string, fromTag: string) {
     /* best-effort teardown */
   }
 }
+
+// ---- Media subscriptions (SIP-REC) -----------------------------------------
+// rtpengine's "subscribe request" hands a consumer its own copy of the media
+// SENT by the given legs (monologues), already decrypted from any WebRTC
+// DTLS-SRTP. It returns an SDP offer (one sendonly m-line per subscribed
+// leg) plus a new to-tag identifying the subscription; the consumer's answer
+// goes back via "subscribe answer". Used by siprec.ts. The transcriber
+// service drives the same commands itself for group members' voices.
+
+export interface Subscription { sdp: string; toTag: string }
+
+export async function subscribeRequest(callId: string, fromTags: string[], extraFlags: string[] = []): Promise<Subscription> {
+  const res = await client.subscribeRequest(config.rtpengine.port, config.rtpengine.host, {
+    'call-id': callId,
+    'from-tags': fromTags,
+    flags: extraFlags,
+    ...PLAIN_RTP,
+  });
+  if (res.result !== 'ok') throw new Error(`rtpengine subscribe request failed: ${JSON.stringify(res)}`);
+  return { sdp: res.sdp as string, toTag: res['to-tag'] as string };
+}
+
+export async function subscribeAnswer(callId: string, toTag: string, sdp: string): Promise<void> {
+  const res = await client.subscribeAnswer(config.rtpengine.port, config.rtpengine.host, {
+    'call-id': callId,
+    'to-tag': toTag,
+    sdp,
+  });
+  if (res.result !== 'ok') throw new Error(`rtpengine subscribe answer failed: ${JSON.stringify(res)}`);
+}
+
+export async function unsubscribe(callId: string, toTag: string): Promise<void> {
+  try {
+    await client.unsubscribe(config.rtpengine.port, config.rtpengine.host, { 'call-id': callId, 'to-tag': toTag });
+  } catch {
+    /* best-effort -the call may already be gone */
+  }
+}

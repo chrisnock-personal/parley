@@ -10,6 +10,11 @@ export interface CallInfo {
   kind: 'direct' | 'group';
   from: string;       // caller extension
   to: string;         // callee extension, or group dial code
+  // rtpengine monologue tags of the two legs (caller = From tag; callee =
+  // 'callee' for direct, 'fs' for group). The transcriber subscribes to a
+  // group member's voice by callerTag; siprec.ts uses both.
+  callerTag: string;
+  calleeTag: string;
   startedAt: number;  // epoch ms
 }
 

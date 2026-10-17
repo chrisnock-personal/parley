@@ -9,6 +9,7 @@ import { lookup, aorKey, extOf, Binding } from './registrar';
 import { sdpMode } from './sdpInspect';
 import { wireReinviteHandling } from './reinvite';
 import * as calls from './calls';
+import { startRecordingIfEnabled } from './siprec';
 
 export function registerDirectIntercom(srf: Srf) {
   // Registered after registerGroupIntercom -group calls are handled there
@@ -58,16 +59,27 @@ export function registerDirectIntercom(srf: Srf) {
         proxyResponseHeaders: ['Server'],
       });
 
-      const teardown = () => { rtp.del(callId, fromTag); calls.end(callId); };
+      const callerExt = extOf(req.getParsedHeader('From').uri);
+      const calleeExt = extOf(targetKey);
+
+      // SIP-REC, if either party is recorded -see siprec.ts. Never blocks
+      // or fails the call itself.
+      const recording = startRecordingIfEnabled(srf, callId, [
+        { tag: fromTag, aor: `sip:${callerExt}@${config.sipRealm}`, name: callerExt, extension: callerExt },
+        { tag: 'callee', aor: `sip:${calleeExt}@${config.sipRealm}`, name: calleeExt, extension: calleeExt },
+      ]);
+
+      const teardown = () => { recording.stop(); rtp.del(callId, fromTag); calls.end(callId); };
       uas.on('destroy', () => { uac.destroy(); teardown(); });
       uac.on('destroy', () => { uas.destroy(); teardown(); });
 
-      // Live-view bookkeeping only (console's "Live" tab) -not used for
-      // any routing decision. See calls.ts.
+      // Live-view bookkeeping (console's "Live" tab, client participant
+      // lists) -not used for any routing decision. See calls.ts.
       calls.start({
         callId, kind: 'direct',
-        from: extOf(req.getParsedHeader('From').uri),
-        to: extOf(targetKey),
+        from: callerExt,
+        to: calleeExt,
+        callerTag: fromTag, calleeTag: 'callee',
         startedAt: Date.now(),
       });
 

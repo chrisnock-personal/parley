@@ -27,9 +27,9 @@ controller-frontend (nginx: console + /intercom-client/ + /ws proxy, HTTP+HTTPS)
                                                                 (Express+TS, Postgres)
 ```
 
-Six compose services: `postgres`, `controller-backend`, `controller-frontend`
+Seven compose services: `postgres`, `controller-backend`, `controller-frontend`
 (also serves the intercom client at `/intercom-client/`), `pbx-core`,
-`rtpengine`, `freeswitch`.
+`rtpengine`, `freeswitch`, `transcriber`.
 
 ## Screenshots
 <img width="806" height="709" alt="Image" src="https://github.com/user-attachments/assets/8303f000-b91e-44af-9d4f-048e5aab5b8f" />
@@ -71,6 +71,26 @@ Six compose services: `postgres`, `controller-backend`, `controller-frontend`
   (FreeSWITCH) automatically -including the trickier case of **two**
   simultaneous WebRTC legs (intercom client ↔ intercom client), which needed
   its own `ICE-lite` handling distinct from the single-WebRTC-leg case.
+
+### Call recording (SIP-REC) and live transcription
+Both take a copy of call media from **rtpengine** (`subscribe request`), so
+nothing extra sits in the media path and browser legs arrive already
+decrypted.
+- **SIP-REC** (RFC 7865/7866): turn on **Record calls** for a directory user
+  and set the **recording server URI** under Settings. pbx-core then acts as
+  the recording client for that user's direct calls and group legs. It opens
+  a separate session to the recording server carrying one labelled stream
+  per party plus RFC 7865 participant metadata, and ends it with the call.
+  Recording is fail-open: if the server can't be reached, the call goes
+  ahead unrecorded (logged).
+- **Live transcription**: turn on **Transcribe** for a group. The
+  `transcriber` service taps each member's own voice, cuts it into
+  utterances at pauses (silence and muted PTT members are never sent),
+  transcribes it with a whisper.cpp `whisper-server` (`WHISPER_URL`; by
+  default a shared instance on the host), and stores lines attributed to
+  the speaker. In the intercom client, a **Transcript** button on that
+  group's strip shows it live to anyone with the group, joined or not. Lines
+  are kept for the retention set under Settings.
 
 ### Controller console
 - **Live** -real registered intercom clients and in-progress calls, polled
@@ -149,7 +169,8 @@ Manager, Graphics), all with password `DEMO_PASSWORD` (default
 mic), and Cameras, Studio Floor and All Call (PTT). Each crew member gets
 ICM keys to the people they'd talk to and buttons for their groups.
 Seeding is additive and idempotent: existing extensions and group dial
-codes are never touched, so it's safe to leave on.
+codes are never touched, so it's safe to leave on. Production is created with
+live transcription on, so the demo shows it straight away.
 
 ### Optional: the Health page's log viewer
 The console's Health page can show live logs from every container over the

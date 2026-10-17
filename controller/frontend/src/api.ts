@@ -39,6 +39,7 @@ export interface Group {
   mode: 'talkback' | 'announce';
   ptt_default: boolean;
   dial_code: string;
+  transcribe_enabled: boolean;
 }
 
 export interface GroupMember {
@@ -64,6 +65,12 @@ export interface DirectoryUser {
   name: string;
   extension: string;
   enabled: boolean;
+  siprec_enabled: boolean;
+}
+
+export interface Settings {
+  siprec_srs_uri: string | null;
+  transcript_retention_days: number;
 }
 
 export interface SystemHealth {
@@ -174,6 +181,8 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   return resp.json() as Promise<T>;
 }
 
+export type PurgeableTable = 'audit_log' | 'intercom_sessions' | 'intercom_transcript_lines';
+
 export const api = {
   async login(email: string, password: string) {
     const out = await req<{ token: string; user: SessionUser }>('/auth/login', {
@@ -219,7 +228,7 @@ export const api = {
   createGroup(body: { name: string; description?: string; mode?: 'talkback' | 'announce'; ptt_default?: boolean; dial_code?: string }) {
     return req<Group>('/groups', { method: 'POST', body: JSON.stringify(body) });
   },
-  updateGroup(id: string, body: Partial<{ name: string; description: string; mode: 'talkback' | 'announce'; ptt_default: boolean; dial_code: string }>) {
+  updateGroup(id: string, body: Partial<{ name: string; description: string; mode: 'talkback' | 'announce'; ptt_default: boolean; dial_code: string; transcribe_enabled: boolean }>) {
     return req<Group>(`/groups/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
   },
   deleteGroup(id: string) {
@@ -242,7 +251,7 @@ export const api = {
   createDirectoryUser(body: { name: string; extension: string; password: string }) {
     return req<DirectoryUser>('/directory-users', { method: 'POST', body: JSON.stringify(body) });
   },
-  updateDirectoryUser(id: string, body: Partial<{ name: string; extension: string; enabled: boolean }>) {
+  updateDirectoryUser(id: string, body: Partial<{ name: string; extension: string; enabled: boolean; siprec_enabled: boolean }>) {
     return req<DirectoryUser>(`/directory-users/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
   },
   deleteDirectoryUser(id: string) {
@@ -296,7 +305,11 @@ export const api = {
   getBackupInfo() { return req<BackupInfo>('/admin/backup/info'); },
   getDbStats() { return req<DbStats>('/admin/db/stats'); },
   runVacuum() { return req<{ ok: boolean; message: string }>('/admin/db/vacuum', { method: 'POST' }); },
-  purgeTable(table: 'audit_log' | 'intercom_sessions', days: number) {
+  getSettings() { return req<Settings>('/settings'); },
+  updateSettings(body: Partial<Settings>) {
+    return req<Settings>('/settings', { method: 'PATCH', body: JSON.stringify(body) });
+  },
+  purgeTable(table: PurgeableTable, days: number) {
     return req<{ ok: boolean; deleted: number; message: string }>('/admin/db/purge', {
       method: 'POST', body: JSON.stringify({ table, days }),
     });

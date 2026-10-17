@@ -29,6 +29,7 @@ import { sdpMode } from './sdpInspect';
 import { wireReinviteHandling } from './reinvite';
 import { extOf } from './registrar';
 import * as calls from './calls';
+import { startRecordingIfEnabled } from './siprec';
 
 export function registerGroupIntercom(srf: Srf) {
   // NB: drachtio-srf's middleware chain requires an explicit next() to
@@ -78,16 +79,26 @@ export function registerGroupIntercom(srf: Srf) {
           rtp.answer({ callId, fromTag, toTag: 'fs', sdp: fsSdp, mode: callerMode }),
       });
 
-      const teardown = () => { rtp.del(callId, fromTag); calls.end(callId); };
+      const memberExt = extOf(req.getParsedHeader('From').uri);
+
+      // SIP-REC, if this member is recorded: their own voice plus the group
+      // mix they hear (FreeSWITCH's leg). See siprec.ts.
+      const recording = startRecordingIfEnabled(srf, callId, [
+        { tag: fromTag, aor: `sip:${memberExt}@${config.sipRealm}`, name: memberExt, extension: memberExt },
+        { tag: 'fs', aor: `sip:${config.groupPrefix}${groupCode}@${config.sipRealm}`, name: `Group ${groupCode}` },
+      ]);
+
+      const teardown = () => { recording.stop(); rtp.del(callId, fromTag); calls.end(callId); };
       uas.on('destroy', () => { uac.destroy(); teardown(); });
       uac.on('destroy', () => { uas.destroy(); teardown(); });
 
-      // Live-view bookkeeping only (console's "Live" tab) -not used for
-      // any routing decision. See calls.ts.
+      // Live-view bookkeeping (console's "Live" tab, client participant
+      // lists, the transcriber) -not used for any routing decision.
       calls.start({
         callId, kind: 'group',
-        from: extOf(req.getParsedHeader('From').uri),
+        from: memberExt,
         to: groupCode,
+        callerTag: fromTag, calleeTag: 'fs',
         startedAt: Date.now(),
       });
 

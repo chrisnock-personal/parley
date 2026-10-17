@@ -134,6 +134,17 @@ input {
 .participant-self { border-color: var(--green); color: var(--green); }
 .participants-empty { font-size: 12px; color: var(--text-dim); }
 
+.transcript-btn.open { border-color: var(--amber); color: var(--amber); }
+.transcript {
+  max-height: 220px; overflow-y: auto; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 13px;
+}
+.transcript-empty { color: var(--text-dim); font-size: 12px; }
+.transcript-line { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; align-items: baseline; }
+.transcript-time { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+.transcript-speaker { font-weight: 600; white-space: nowrap; }
+.transcript-self .transcript-speaker { color: var(--green); }
+
 .group-list {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;
 }

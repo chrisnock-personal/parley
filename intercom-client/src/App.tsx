@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { api, Button, GroupParticipant, IntercomClientSession } from './api';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
+import { api, Button, GroupParticipant, IntercomClientSession, TranscriptLine } from './api';
 import { createIntercomClientUa, targetUri } from './sipUa';
 import { CallManager, SlotId, SlotState, SlotStates, ICM_SLOT, lineSlot, idleSlot, CallEventPayload } from './calls';
 
@@ -244,6 +244,48 @@ function DirectKeys({ buttons, icm, lineUp, onPress }: {
   );
 }
 
+// A group's live transcript (backend transcriber, per speaker), readable
+// whether or not you've joined. Polls for new lines every 2s while open and
+// keeps the view pinned to the newest line unless you've scrolled up.
+function TranscriptPanel({ dialCode, selfExt }: { dialCode: string; selfExt: string }) {
+  const [lines, setLines] = useState<TranscriptLine[]>([]);
+  const lastId = useRef<string | undefined>(undefined);
+  const box = useRef<HTMLDivElement>(null);
+  const pinned = useRef(true);
+
+  useEffect(() => {
+    let stopped = false;
+    const poll = () => api.groupTranscript(dialCode, lastId.current)
+      .then((r) => {
+        if (stopped || !r.lines.length) return;
+        lastId.current = r.lines[r.lines.length - 1].id;
+        setLines((prev) => [...prev, ...r.lines].slice(-200));
+      })
+      .catch(() => { /* keep what we have */ });
+    poll();
+    const t = window.setInterval(poll, 2000);
+    return () => { stopped = true; window.clearInterval(t); };
+  }, [dialCode]);
+
+  useLayoutEffect(() => {
+    if (pinned.current && box.current) box.current.scrollTop = box.current.scrollHeight;
+  }, [lines]);
+
+  return (
+    <div className="transcript" ref={box}
+      onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24; }}>
+      {lines.length === 0 && <div className="transcript-empty">Nothing said yet.</div>}
+      {lines.map((l) => (
+        <div key={l.id} className={`transcript-line${l.speaker_extension === selfExt ? ' transcript-self' : ''}`}>
+          <span className="transcript-time">{new Date(l.spoken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+          <span className="transcript-speaker">{l.speaker_name || l.speaker_extension}</span>
+          <span className="transcript-text">{l.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // One strip per assigned group, joined or not -Eyevinn's "lines in a
 // production" view. Any number can be joined at once, each with its own
 // talk and listen controls, and each lists who's in it right now.
@@ -253,6 +295,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
 }) {
   const slot = lineSlot(button.target_group_dial_code!);
   const joined = state.status !== 'idle';
+  const [showTranscript, setShowTranscript] = useState(false);
   const live = state.status === 'connected';
   return (
     <div className={`slot slot-line slot-${state.status}${state.muted ? ' slot-muted' : ''}`}>
@@ -276,10 +319,16 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
       )}
       <div className="slot-controls">
         <button className={joined ? 'leave-btn' : 'join-btn'} disabled={!joined && !lineUp} onClick={onToggleJoin}>{joined ? 'Leave' : 'Join'}</button>
+        {button.target_group_transcribe_enabled && (
+          <button className={showTranscript ? 'transcript-btn open' : 'transcript-btn'} onClick={() => setShowTranscript((v) => !v)}>
+            📝 Transcript
+          </button>
+        )}
         {live && <TalkControls state={state} onSetMuted={(m) => actions.setMuted(slot, m)} />}
       </div>
       <ListenControls state={state} onListenMute={() => actions.setListenMuted(slot, !state.listenMuted)}
         onVolume={(v) => actions.setVolume(slot, v)} />
+      {showTranscript && <TranscriptPanel dialCode={button.target_group_dial_code!} selfExt={selfExt} />}
     </div>
   );
 }
