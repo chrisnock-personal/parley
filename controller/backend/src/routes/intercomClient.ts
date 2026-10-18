@@ -2,7 +2,8 @@
 import { Router } from 'express';
 import config from '../config';
 import { requireIntercomClientAuth, signIntercomClientToken } from '../middleware/intercomClientSession';
-import { authenticateDirectoryUser, listButtons } from '../services/directoryUserService';
+import { authenticateDirectoryUser, getDirectoryUser, listButtons } from '../services/directoryUserService';
+import { getSettings } from '../services/settingsService';
 import { audit } from '../services/auditService';
 import { recordIntercomClientCallStart, recordIntercomClientCallEnd } from '../services/pbxService';
 import { getLiveStatus } from '../services/pbxCoreService';
@@ -50,6 +51,9 @@ router.get('/me', requireIntercomClientAuth, async (req, res, next) => {
 // unreachable means nobody shows as talking). Only groups this user has a
 // button for are returned. Polled by the client every second; pbx-core
 // being unreachable is a 502 the client just skips, never an error dialog.
+// Also carries what the client's indicators need on the same tick: who's
+// online (registered), and recording state -whether this user is recorded
+// by policy, and which of their calls/groups are being recorded right now.
 router.get('/groups/participants', requireIntercomClientAuth, async (req, res, next) => {
   try {
     const buttons = await listButtons(req.intercomClientUser!.id);
@@ -64,14 +68,32 @@ router.get('/groups/participants', requireIntercomClientAuth, async (req, res, n
       const body = await r.json() as { talking: { group: string; extension: string }[] };
       for (const t of body.talking) talking.add(`${t.group}/${t.extension}`);
     } catch { /* transcriber down: nobody shows as talking */ }
+    const me = req.intercomClientUser!.extension;
     const participants: Record<string, { extension: string; name: string; talking: boolean }[]> = {};
+    const recordingGroups = new Set<string>();
+    let icmRecording = false;
     for (const code of mine) participants[code] = [];
     for (const c of live.calls) {
       if (c.kind === 'group' && mine.has(c.to)) {
         participants[c.to].push({ extension: c.from, name: c.fromName, talking: talking.has(`${c.to}/${c.from}`) });
+        // Any member's recorded leg includes the group mix, so everyone's
+        // voice in that group is being recorded.
+        if (c.recording) recordingGroups.add(c.to);
       }
+      if (c.kind === 'direct' && c.recording && (c.from === me || c.to === me)) icmRecording = true;
     }
-    res.json({ participants });
+    // Policy, not a live session: this user's calls get recorded (their
+    // "Record calls" switch is on AND a recording server is configured).
+    const [self, settings] = await Promise.all([getDirectoryUser(req.intercomClientUser!.id), getSettings()]);
+    res.json({
+      participants,
+      online: live.registrations.map((r) => r.extension),
+      recording: {
+        self: self.siprec_enabled && !!settings.siprec_srs_uri,
+        icm: icmRecording,
+        groups: [...recordingGroups],
+      },
+    });
   } catch (err) { next(err); }
 });
 

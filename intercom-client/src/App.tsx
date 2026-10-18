@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
-import { api, Button, GroupParticipant, IntercomClientSession, TranscriptLine } from './api';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect, createContext, useContext } from 'react';
+import { api, Button, GroupParticipant, IntercomClientSession, LiveState, TranscriptLine } from './api';
 import { createIntercomClientUa, targetUri } from './sipUa';
 import { CallManager, SlotId, SlotState, SlotStates, ICM_SLOT, lineSlot, idleSlot, CallEventPayload } from './calls';
 
@@ -164,11 +164,84 @@ function avatarTone(key: string): number {
   for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return h % 6;
 }
-function Avatar({ name, id, size = 28, talking = false }: { name: string; id: string; size?: number; talking?: boolean }) {
+// Clicking an openable avatar shows that person's card (PersonCard, below).
+// A context, so any avatar can open it without threading a callback through
+// every component.
+type OpenPerson = (person: { extension: string; name: string }, anchor: HTMLElement) => void;
+const PersonCardContext = createContext<OpenPerson>(() => { /* no card host */ });
+
+function Avatar({ name, id, size = 28, talking = false, openable = false }: {
+  name: string; id: string; size?: number; talking?: boolean; openable?: boolean;
+}) {
+  const open = useContext(PersonCardContext);
+  const cls = `avatar tone-${avatarTone(id)}${talking ? ' talking' : ''}`;
+  const style = { width: size, height: size, fontSize: Math.round(size * 0.38) };
+  if (!openable) return <span className={cls} style={style} aria-hidden="true">{initials(name)}</span>;
   return (
-    <span className={`avatar tone-${avatarTone(id)}${talking ? ' talking' : ''}`} style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }} aria-hidden="true">
+    <button type="button" className={`${cls} avatar-btn`} style={style} aria-label={`About ${name}`}
+      onClick={(e) => { e.stopPropagation(); open({ extension: id, name }, e.currentTarget); }}>
       {initials(name)}
-    </span>
+    </button>
+  );
+}
+
+// Small status tags on cards and in the top bar.
+function RecTag({ title }: { title: string }) {
+  return <span className="rec-tag" title={title}><span className="rec-dot" aria-hidden="true" />REC</span>;
+}
+
+// A person's card, opened from an avatar: who they are, whether they're
+// online and talking, which of your groups they're in, and a Call / Hang up
+// button when you have an intercom key for them. Escape or a click outside
+// closes it.
+function PersonCard({ person, anchor, online, talking, groups, keyButton, onCallWith, onCall, onHangup, onClose }: {
+  person: { extension: string; name: string }; anchor: DOMRect;
+  online: boolean; talking: boolean; groups: string[]; keyButton: Button | undefined; onCallWith: boolean;
+  onCall: () => void; onHangup: () => void; onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number }>({ left: anchor.left, top: anchor.bottom + 8 });
+  useLayoutEffect(() => {
+    // Below the avatar if it fits, else above; kept inside the viewport.
+    const el = ref.current;
+    if (!el) return;
+    const w = el.offsetWidth, h = el.offsetHeight, m = 8;
+    const left = Math.min(Math.max(m, anchor.left + anchor.width / 2 - w / 2), window.innerWidth - w - m);
+    const below = anchor.bottom + m;
+    const top = below + h <= window.innerHeight - m ? below : Math.max(m, anchor.top - h - m);
+    setPos({ left, top });
+  }, [anchor]);
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [onClose]);
+  return (
+    <div className="person-card" ref={ref} role="dialog" aria-label={`${person.name}, extension ${person.extension}`}
+      style={{ left: pos.left, top: pos.top }}>
+      <div className="person-card-head">
+        <Avatar name={person.name} id={person.extension} size={44} talking={talking} />
+        <div>
+          <div className="person-card-name">{person.name}</div>
+          <div className="person-card-ext">ext {person.extension}</div>
+        </div>
+      </div>
+      <div className="person-card-status">
+        <span className={`presence ${online ? 'online' : 'offline'}`}><span className="presence-dot" aria-hidden="true" />{online ? 'Online' : 'Offline'}</span>
+        {talking && <span className="presence talking-now"><span className="presence-dot" aria-hidden="true" />Talking</span>}
+      </div>
+      <div className="person-card-groups">
+        <div className="person-card-label">In your groups</div>
+        {groups.length ? <div>{groups.join(', ')}</div> : <div className="dim">None right now</div>}
+      </div>
+      {onCallWith
+        ? <button className="act-btn danger" onClick={onHangup}>Hang up</button>
+        : keyButton
+          ? <button className="person-card-call" disabled={!online} onClick={onCall}>{online ? `Call ${person.name}` : 'Offline -can\'t call'}</button>
+          : <div className="dim person-card-note">No intercom key for this person.</div>}
+    </div>
   );
 }
 
@@ -203,8 +276,8 @@ function VolumeRow({ slot, state, actions }: { slot: SlotId; state: SlotState; a
 // The Intercom section: a call card (who you're on with, mic / hold / hang up,
 // auto-answer, volume) beside the ICM keys as large panel keys. Press a key to
 // call that person; press the live key (or Hang up) to end it.
-function IcmSection({ state, actions, keys, lineUp, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress }: {
-  state: SlotState; actions: SlotActions; keys: Button[]; lineUp: boolean;
+function IcmSection({ state, actions, keys, lineUp, recording, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress }: {
+  state: SlotState; actions: SlotActions; keys: Button[]; lineUp: boolean; recording: boolean;
   autoAnswer: boolean; onToggleAutoAnswer: () => void; onHold: () => void; onHangup: () => void; onPress: (b: Button) => void;
 }) {
   const active = state.status !== 'idle';
@@ -216,10 +289,13 @@ function IcmSection({ state, actions, keys, lineUp, autoAnswer, onToggleAutoAnsw
       <div className={`card call-card${live ? ' is-live' : active ? ' is-pending' : ''}${state.onHold ? ' is-held' : ''}`}>
         <div className="call-head">
           {active && who
-            ? <Avatar name={who} id={state.counterpart ?? who} size={40} />
+            ? <Avatar name={who} id={state.counterpart ?? who} size={40} openable />
             : <span className="call-idle-icon"><Icon name="headset" size={20} /></span>}
           <div className="card-title">
-            <div className="card-name">{active ? `${live ? 'On call' : 'Calling'} · ${who ?? ''}` : 'No call'}</div>
+            <div className="card-name">
+              <span className="card-name-text">{active ? `${live ? 'On call' : 'Calling'} · ${who ?? ''}` : 'No call'}</span>
+              {active && recording && <RecTag title="This call is being recorded" />}
+            </div>
             <div className="card-sub">
               {active ? `${state.status}${state.onHold ? ' · on hold' : ''}` : 'press a key to call'}
             </div>
@@ -301,7 +377,7 @@ function TranscriptPanel({ dialCode, selfExt }: { dialCode: string; selfExt: str
         const name = l.speaker_name || l.speaker_extension;
         return (
           <div key={l.id} className={`chat-line${l.speaker_extension === selfExt ? ' self' : ''}`}>
-            <Avatar name={name} id={l.speaker_extension} size={24} />
+            <Avatar name={name} id={l.speaker_extension} size={24} openable />
             <div className="chat-bubble">
               <div className="chat-meta">
                 {name}{l.speaker_extension === selfExt ? ' (you)' : ''} · {new Date(l.spoken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
@@ -320,8 +396,8 @@ function TranscriptPanel({ dialCode, selfExt }: { dialCode: string; selfExt: str
 // To Talk. Then collapsible Participants and (for transcribed groups)
 // Transcript, and Join / Leave at the bottom.
 const STACK_MAX = 4;
-function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onToggleJoin }: {
-  button: Button; state: SlotState; actions: SlotActions; lineUp: boolean;
+function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, onToggleJoin }: {
+  button: Button; state: SlotState; actions: SlotActions; lineUp: boolean; recording: boolean;
   participants: GroupParticipant[] | undefined; selfExt: string; onToggleJoin: () => void;
 }) {
   const slot = lineSlot(button.target_group_dial_code!);
@@ -343,7 +419,11 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
       <div className="card-head">
         <ActivityLight state={state} />
         <div className="card-title">
-          <div className="card-name">{buttonLabel(button)}</div>
+          <div className="card-name">
+            <span className="card-name-text">{buttonLabel(button)}</span>
+            {recording && <RecTag title="Someone in this group is being recorded, so the group's audio is recorded" />}
+            {button.target_group_transcribe_enabled && <span className="info-tag" title="Speech in this group is transcribed and kept">Transcribed</span>}
+          </div>
           <div className="card-sub">
             {GROUP_PREFIX}{button.target_group_dial_code} · {mode} · {joined ? (live ? 'joined' : state.status) : 'not joined'}
             {state.onHold ? ' · on hold' : ''}
@@ -353,7 +433,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
           ? (
             <span className="avatar-stack" title={people.map((p) => p.name + (p.talking ? ' (talking)' : '')).join(', ')}
               aria-label={`${people.length} in group${talkers.length ? `, talking: ${talkers.join(', ')}` : ''}`}>
-              {people.slice(0, STACK_MAX).map((p) => <Avatar key={p.extension} name={p.name} id={p.extension} talking={p.talking} />)}
+              {people.slice(0, STACK_MAX).map((p) => <Avatar key={p.extension} name={p.name} id={p.extension} talking={p.talking} openable />)}
               {people.length > STACK_MAX && <span className="avatar more">+{people.length - STACK_MAX}</span>}
             </span>
           )
@@ -396,7 +476,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
             ? <div className="participants-empty">Nobody in this group</div>
             : people.map((p) => (
               <div key={p.extension} className={`person-row${p.extension === selfExt ? ' self' : ''}${p.talking ? ' talking' : ''}`}>
-                <Avatar name={p.name} id={p.extension} size={26} talking={p.talking} />
+                <Avatar name={p.name} id={p.extension} size={26} talking={p.talking} openable />
                 <span className="person-name">{p.name}{p.extension === selfExt ? ' (you)' : ''}</span>
                 <span className="person-ext">{p.talking ? 'talking' : p.extension}</span>
               </div>
@@ -482,6 +562,11 @@ export default function App() {
   // dial code -> current members, polled from the backend (pbx-core's live
   // call list), so a group shows who's in it even if you haven't joined.
   const [participants, setParticipants] = useState<Record<string, GroupParticipant[]> | null>(null);
+  // Who's online and what's being recorded, from the same poll.
+  const [live, setLive] = useState<Pick<LiveState, 'online' | 'recording'>>({ online: [], recording: { self: false, icm: false, groups: [] } });
+  const [card, setCard] = useState<{ person: { extension: string; name: string }; anchor: DOMRect } | null>(null);
+  const openPerson = useCallback<OpenPerson>((person, el) => setCard({ person, anchor: el.getBoundingClientRect() }), []);
+  const closeCard = useCallback(() => setCard(null), []);
   // Why the last WebSocket attempt failed, shown in the badge. 1006 with no
   // reason is the browser's generic "connection failed", typically a TLS
   // trust failure on wss:// (see README -> TLS).
@@ -517,7 +602,11 @@ export default function App() {
     if (!session || needsSipPassword) return;
     let stopped = false;
     const poll = () => api.groupParticipants()
-      .then((r) => { if (!stopped) setParticipants(r.participants); })
+      .then((r) => {
+        if (stopped) return;
+        setParticipants(r.participants);
+        setLive({ online: r.online, recording: r.recording });
+      })
       .catch(() => { /* keep last known */ });
     poll();
     const t = window.setInterval(poll, 1000);
@@ -715,7 +804,26 @@ export default function App() {
     setVolume: (slot, v) => managerRef.current.setVolume(slot, v),
   };
 
+  // The person card's facts, worked out from what's already polled.
+  let personCard: React.ReactNode = null;
+  if (card) {
+    const ext = card.person.extension;
+    const inGroups = groupButtons.filter((b) => (participants?.[b.target_group_dial_code!] ?? []).some((p) => p.extension === ext));
+    const talking = inGroups.some((b) => participants?.[b.target_group_dial_code!]?.some((p) => p.extension === ext && p.talking));
+    const keyButton = directButtons.find((b) => b.target_extension === ext);
+    const onCallWith = icm.status !== 'idle' && icm.counterpart === ext;
+    personCard = (
+      <PersonCard person={card.person} anchor={card.anchor}
+        online={live.online.includes(ext)} talking={talking} groups={inGroups.map(buttonLabel)}
+        keyButton={keyButton} onCallWith={onCallWith}
+        onCall={() => { if (keyButton) handleDirectPress(keyButton); setCard(null); }}
+        onHangup={() => { managerRef.current.hangup(ICM_SLOT); setCard(null); }}
+        onClose={closeCard} />
+    );
+  }
+
   return (
+    <PersonCardContext.Provider value={openPerson}>
     <div className="client-shell">
       <div className="client-topbar">
         <div className="topbar-who">
@@ -726,6 +834,9 @@ export default function App() {
             {lineStatus === 'registered' ? '● line up' : lineStatus === 'connecting' ? '○ connecting…' : '✕ line down -retrying'}
             {lineStatus !== 'registered' && lineError && ` (${lineError})`}
           </span>
+          {/* Policy, shown all the time: your calls are recorded. The REC tag
+              on a card means that particular call is being recorded now. */}
+          {live.recording.self && <RecTag title="Your calls are recorded" />}
         </div>
         <div className="topbar-actions">
           <ThemeSwitch theme={theme} onChange={setTheme} />
@@ -769,6 +880,7 @@ export default function App() {
               actions={actions}
               keys={directButtons}
               lineUp={lineUp}
+              recording={live.recording.icm}
               autoAnswer={intercomAutoAnswer}
               onToggleAutoAnswer={() => setIntercomAutoAnswer((v) => !v)}
               onHold={() => managerRef.current.setHold(ICM_SLOT, !icm.onHold)}
@@ -783,13 +895,16 @@ export default function App() {
             {groupButtons.map((b) => (
               <GroupStrip key={b.id} button={b} state={slotStates[lineSlot(b.target_group_dial_code!)] ?? idleSlot()}
                 actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
-                selfExt={session.extension} onToggleJoin={() => handleLineToggle(b)} />
+                selfExt={session.extension} recording={live.recording.groups.includes(b.target_group_dial_code!)}
+                onToggleJoin={() => handleLineToggle(b)} />
             ))}
           </div>
           {groupButtons.length === 0 && <div className="empty">No groups assigned yet.</div>}
         </section>
         {session.buttons.length === 0 && <div className="empty">No buttons assigned yet.</div>}
       </div>
+      {personCard}
     </div>
+    </PersonCardContext.Provider>
   );
 }

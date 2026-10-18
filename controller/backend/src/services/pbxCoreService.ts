@@ -24,6 +24,7 @@ interface RawCallInfo {
   from: string;
   to: string;
   startedAt: number;
+  recording?: boolean;
 }
 
 export interface LiveRegistration {
@@ -42,6 +43,7 @@ export interface LiveCall {
   to: string;          // callee extension, or group dial code
   toName: string;
   startedAt: string;
+  recording: boolean;  // a SIP-REC session is running for this call right now
 }
 
 function extOf(aor: string): string {
@@ -77,6 +79,7 @@ export async function getLiveStatus(): Promise<{ registrations: LiveRegistration
     to: c.to,
     toName: c.kind === 'group' ? (nameByDialCode.get(c.to) ?? c.to) : (nameByExt.get(c.to) ?? c.to),
     startedAt: new Date(c.startedAt).toISOString(),
+    recording: !!c.recording,
   }));
 
   return { registrations, calls };

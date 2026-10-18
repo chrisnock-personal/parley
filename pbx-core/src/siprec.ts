@@ -20,6 +20,7 @@ import Srf from 'drachtio-srf';
 import { config } from './config';
 import * as rtp from './rtpengine';
 import { getSrsUri, getUserPolicy } from './db';
+import * as calls from './calls';
 
 export interface RecordedLeg {
   tag: string;        // rtpengine monologue (from-tag) whose SENT media this stream carries
@@ -77,6 +78,31 @@ function mediaLabels(sdp: string): string[] {
   return sdp.split(/\r?\nm=/).slice(1).map((section, i) => section.match(/^a=label:(\S+)/m)?.[1] ?? String(i));
 }
 
+// rtpengine 10.5 rejects a subscription answer that drops a codec the offer
+// carries -including telephone-event, which every browser leg has next to
+// its audio codec ("Failed to process subscription answer"; filtering DTMF
+// out counts as a media change it won't make for a subscriber). Recording
+// servers commonly answer audio only, so recording failed for every browser
+// call (found 2026-10-18; plain-RTP test legs had no DTMF, so earlier tests
+// passed). Add the offer's telephone-event back into each answered section:
+// rtpengine is then satisfied, and the recorder just receives DTMF packets
+// it can ignore.
+function keepOfferedDtmf(offer: string, answer: string): string {
+  const sections = (sdp: string) => sdp.split(/(?=^m=)/m);
+  const offerSecs = sections(offer);
+  const [head, ...ansSecs] = sections(answer);
+  const offerMedia = offerSecs.filter((x) => x.startsWith('m='));
+  return head + ansSecs.map((sec, i) => {
+    const off = offerMedia[i];
+    const te = off?.match(/^a=rtpmap:(\d+) (telephone-event\/\d+)/m);
+    if (!te || new RegExp(`^a=rtpmap:\\d+ telephone-event`, 'm').test(sec)) return sec;
+    const fmtp = off.match(new RegExp(`^a=fmtp:${te[1]} [^\\r\\n]+`, 'm'));
+    const eol = sec.includes('\r\n') ? '\r\n' : '\n';
+    const [mline, ...rest] = sec.split(eol);
+    return [`${mline} ${te[1]}`, `a=rtpmap:${te[1]} ${te[2]}`, ...(fmtp ? [fmtp[0]] : []), ...rest].join(eol);
+  }).join('');
+}
+
 /** The SDP part of an SRS answer, which may itself be multipart. */
 function sdpPart(body: string, contentType: string | undefined): string {
   const boundary = contentType?.match(/boundary="?([^";]+)"?/i)?.[1];
@@ -129,15 +155,17 @@ export function startRecordingIfEnabled(srf: Srf, callId: string, legs: Recorded
           Contact: `${config.ownContact};+sip.src`,
         },
       });
-      await rtp.subscribeAnswer(callId, sub.toTag, sdpPart(uac.remote.sdp, uac.res?.get?.('Content-Type')));
+      const srsSdp = sdpPart(uac.remote.sdp, uac.res?.get?.('Content-Type'));
+      await rtp.subscribeAnswer(callId, sub.toTag, keepOfferedDtmf(sub.sdp, srsSdp));
     } catch (err) {
       release();
       throw err;
     }
     if (stopped) { release(); return; }
-    teardown = release;
+    teardown = () => { calls.setRecording(callId, false); release(); };
+    calls.setRecording(callId, true);
     // The SRS can end the recording itself; free the subscription if so.
-    uac.on('destroy', () => { rtp.unsubscribe(callId, sub.toTag); teardown = null; });
+    uac.on('destroy', () => { rtp.unsubscribe(callId, sub.toTag); calls.setRecording(callId, false); teardown = null; });
     console.log(`[siprec] recording call ${callId} (${legs.map((l) => l.name).join(' / ')}) to ${srsUri}`);
   })().catch((err) => console.error(`[siprec] call ${callId} not recorded:`, err?.message || err));
 

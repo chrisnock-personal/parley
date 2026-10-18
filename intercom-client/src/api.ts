@@ -24,6 +24,17 @@ export interface TranscriptLine {
   spoken_at: string;
 }
 
+// What the client polls every second (GET /groups/participants).
+export interface LiveState {
+  participants: Record<string, GroupParticipant[]>; // dial code -> who's in it
+  online: string[];                                  // registered extensions
+  recording: {
+    self: boolean;     // this user's calls are recorded (policy: their switch + a recording server)
+    icm: boolean;      // their current direct call is being recorded right now
+    groups: string[];  // dial codes being recorded right now (any member's leg)
+  };
+}
+
 export interface GroupParticipant {
   extension: string;
   name: string;
@@ -82,7 +93,7 @@ export const api = {
   },
 
   // dial code -> who's in that group right now (see the backend route).
-  groupParticipants(): Promise<{ participants: Record<string, GroupParticipant[]> }> {
+  groupParticipants(): Promise<LiveState> {
     return req('/groups/participants');
   },
 
