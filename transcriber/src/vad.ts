@@ -11,8 +11,8 @@
 // Thresholds measured 2026-10-18 on CallRaven's sample speech vs synthetic
 // white/pink/brown noise and mains hum, at equal loudness: speech showed
 // talking 61-67% of the time (vs 59% for loudness alone), every noise 0%
-// (vs 100%). Known limit: tonal music in the voice range passes, as with
-// any simple VAD (whisper's own gates still keep it out of the transcript).
+// (vs 100%). Tonal music in the voice range passes this per-frame test;
+// segmenter.ts catches it over time by its held pitch (pitch.ts).
 import { rms } from './audio';
 
 export const FRAME = 320;
