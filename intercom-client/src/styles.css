@@ -327,10 +327,15 @@ input[type=checkbox] { accent-color: var(--accent); }
   flex: 1 1 480px; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px;
 }
 .key-tile {
-  text-align: left; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-tile);
+  position: relative; text-align: left; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-tile);
   padding: 14px; min-height: 96px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px;
 }
 .key-tile.live { background: var(--live-bg); border-color: var(--live); }
+.key-presence {
+  position: absolute; top: 10px; right: 10px; width: 10px; height: 10px; border-radius: 50%;
+}
+.key-presence.online { background: var(--live); box-shadow: 0 0 6px var(--live); }
+.key-presence.offline { border: 2px solid var(--danger); background: transparent; }
 .key-meta { font-family: var(--mono); font-size: 11px; color: var(--dim); }
 .key-tile.live .key-meta { color: var(--live-soft); }
 .key-who { display: flex; align-items: center; gap: 10px; }

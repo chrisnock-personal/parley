@@ -276,8 +276,8 @@ function VolumeRow({ slot, state, actions }: { slot: SlotId; state: SlotState; a
 // The Intercom section: a call card (who you're on with, mic / hold / hang up,
 // auto-answer, volume) beside the ICM keys as large panel keys. Press a key to
 // call that person; press the live key (or Hang up) to end it.
-function IcmSection({ state, actions, keys, lineUp, recording, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress }: {
-  state: SlotState; actions: SlotActions; keys: Button[]; lineUp: boolean; recording: boolean;
+function IcmSection({ state, actions, keys, lineUp, recording, online, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress }: {
+  state: SlotState; actions: SlotActions; keys: Button[]; lineUp: boolean; recording: boolean; online: string[];
   autoAnswer: boolean; onToggleAutoAnswer: () => void; onHold: () => void; onHangup: () => void; onPress: (b: Button) => void;
 }) {
   const active = state.status !== 'idle';
@@ -324,10 +324,14 @@ function IcmSection({ state, actions, keys, lineUp, recording, autoAnswer, onTog
       <div className="key-grid">
         {keys.map((b) => {
           const isActive = !!activeKey && activeKey.id === b.id;
+          const isOnline = online.includes(b.target_extension!);
           return (
             <button key={b.id} className={`key-tile${isActive ? ' live' : ''}`}
               disabled={!lineUp && !isActive} onClick={() => onPress(b)}
-              aria-label={isActive ? `Hang up ${buttonLabel(b)}` : `Call ${buttonLabel(b)}`}>
+              aria-label={`${isActive ? 'Hang up' : 'Call'} ${buttonLabel(b)}, ${isOnline ? 'online' : 'offline'}`}>
+              {/* Presence: green filled = online (registered), red ring = offline.
+                  Shape differs as well as colour, for colour-blind users. */}
+              <span className={`key-presence ${isOnline ? 'online' : 'offline'}`} title={isOnline ? 'Online' : 'Offline'} aria-hidden="true" />
               <span className="key-meta">ICM {b.target_extension}{isActive ? ' · LIVE' : ''}</span>
               <span className="key-who">
                 <Avatar name={buttonLabel(b)} id={b.target_extension!} size={30} />
@@ -881,6 +885,7 @@ export default function App() {
               keys={directButtons}
               lineUp={lineUp}
               recording={live.recording.icm}
+              online={live.online}
               autoAnswer={intercomAutoAnswer}
               onToggleAutoAnswer={() => setIntercomAutoAnswer((v) => !v)}
               onHold={() => managerRef.current.setHold(ICM_SLOT, !icm.onHold)}
