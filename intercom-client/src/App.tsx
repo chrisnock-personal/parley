@@ -127,11 +127,78 @@ function buttonLabel(b: Button): string {
   return b.label || (b.button_type === 'direct' ? (b.target_name || b.target_extension!) : b.target_group_name!);
 }
 
-// The direct-intercom (ICM) card: one private 2-party call at a time, with
-// real SIP hold (pbx-core/src/reinvite.ts), the auto-answer toggle, and the
-// user's ICM keys as rows -press one to call that person, press the active
-// one (or Hang Up) to end it. Same card style as the groups, first in the grid.
-function IcmCard({ state, actions, keys, lineUp, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress }: {
+// Small inline icons (Lucide-style strokes) -no icon library dependency.
+const ICON_PATHS: Record<string, string> = {
+  chevron: 'M6 9l6 6l6-6',
+  volume: 'M11 5L6 9H2v6h4l5 4V5z M15.54 8.46a5 5 0 0 1 0 7.07 M19.07 4.93a10 10 0 0 1 0 14.14',
+  volumeOff: 'M11 5L6 9H2v6h4l5 4V5z M22 9l-6 6 M16 9l6 6',
+  mic: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v3',
+  micOff: 'M2 2l20 20 M18.89 13.23A7 7 0 0 0 19 12v-2 M5 10v2a7 7 0 0 0 12 5 M15 9.34V5a3 3 0 0 0-5.68-1.33 M9 9v3a3 3 0 0 0 5.12 2.12 M12 19v3',
+  headset: 'M3 14v-3a9 9 0 0 1 18 0v3 M21 15a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2z M3 15a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z',
+};
+function Icon({ name, size = 16 }: { name: keyof typeof ICON_PATHS; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {ICON_PATHS[name].split(' M').map((d, i) => <path key={i} d={i ? `M${d}` : d} />)}
+    </svg>
+  );
+}
+
+// People are drawn as initials avatars. Each person keeps one colour (picked
+// from the theme's avatar palette by a hash of their extension), so the same
+// person looks the same in every card.
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return '?';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
+function avatarTone(key: string): number {
+  let h = 0;
+  for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return h % 6;
+}
+function Avatar({ name, id, size = 28 }: { name: string; id: string; size?: number }) {
+  return (
+    <span className={`avatar tone-${avatarTone(id)}`} style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }} aria-hidden="true">
+      {initials(name)}
+    </span>
+  );
+}
+
+// A titled, collapsible section of a group card -collapsed by default.
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`card-section${open ? ' open' : ''}`}>
+      <button className="card-section-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span>{title}</span>
+        <span className="chevron"><Icon name="chevron" /></span>
+      </button>
+      {open && <div className="card-section-body">{children}</div>}
+    </div>
+  );
+}
+
+function VolumeRow({ slot, state, actions }: { slot: SlotId; state: SlotState; actions: SlotActions }) {
+  return (
+    <div className="card-volume">
+      <button className={`icon-btn${state.listenMuted ? ' off' : ''}`} aria-label={state.listenMuted ? 'Unmute listening' : 'Mute listening'}
+        onClick={() => actions.setListenMuted(slot, !state.listenMuted)}>
+        <Icon name="volumeOff" size={20} />
+      </button>
+      <input type="range" min={0} max={100} value={Math.round(state.volume * 100)} disabled={state.listenMuted}
+        onChange={(e) => actions.setVolume(slot, Number(e.target.value) / 100)} aria-label="Volume" />
+      <span className="icon-static"><Icon name="volume" size={20} /></span>
+    </div>
+  );
+}
+
+// The Intercom section: a call card (who you're on with, mic / hold / hang up,
+// auto-answer, volume) beside the ICM keys as large panel keys. Press a key to
+// call that person; press the live key (or Hang up) to end it.
+function IcmSection({ state, actions, keys, lineUp, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress }: {
   state: SlotState; actions: SlotActions; keys: Button[]; lineUp: boolean;
   autoAnswer: boolean; onToggleAutoAnswer: () => void; onHold: () => void; onHangup: () => void; onPress: (b: Button) => void;
 }) {
@@ -140,79 +207,63 @@ function IcmCard({ state, actions, keys, lineUp, autoAnswer, onToggleAutoAnswer,
   const activeKey = active ? keys.find((b) => state.counterpart === b.target_extension) : undefined;
   const who = activeKey ? buttonLabel(activeKey) : state.counterpart;
   return (
-    <div className={`group-card icm-card slot-${state.status}${state.onHold ? ' slot-onhold' : ''}`}>
-      <div className="card-head">
-        <ActivityLight state={state} />
-        <div className="card-title">
-          <div className="card-name">Intercom</div>
-          <div className="card-sub">
-            {active ? `${state.status}${who ? ` · ${who}` : ''}${state.onHold ? ' (on hold)' : ''}` : 'direct calls · idle'}
+    <div className="icm-row">
+      <div className={`card call-card${live ? ' is-live' : active ? ' is-pending' : ''}${state.onHold ? ' is-held' : ''}`}>
+        <div className="call-head">
+          {active && who
+            ? <Avatar name={who} id={state.counterpart ?? who} size={40} />
+            : <span className="call-idle-icon"><Icon name="headset" size={20} /></span>}
+          <div className="card-title">
+            <div className="card-name">{active ? `${live ? 'On call' : 'Calling'} · ${who ?? ''}` : 'No call'}</div>
+            <div className="card-sub">
+              {active ? `${state.status}${state.onHold ? ' · on hold' : ''}` : 'press a key to call'}
+            </div>
           </div>
+          <ActivityLight state={state} />
         </div>
-        <label className="autoanswer-toggle" title="Answer incoming intercom calls automatically">
-          <input type="checkbox" checked={autoAnswer} onChange={onToggleAutoAnswer} /> Auto-answer
+        <VolumeRow slot={ICM_SLOT} state={state} actions={actions} />
+        {active && (
+          <div className="call-actions">
+            {live && (
+              <button className={`act-btn${state.muted ? ' off' : ' on'}`} onClick={() => actions.setMuted(ICM_SLOT, !state.muted)}>
+                <Icon name={state.muted ? 'micOff' : 'mic'} /> {state.muted ? 'Mic off' : 'Mic on'}
+              </button>
+            )}
+            {live && (
+              <button className={`act-btn${state.onHold ? ' held' : ''}`} onClick={onHold}>{state.onHold ? 'Resume' : 'Hold'}</button>
+            )}
+            <button className="act-btn danger" onClick={onHangup}>Hang up</button>
+          </div>
+        )}
+        <label className="autoanswer-toggle">
+          <input type="checkbox" checked={autoAnswer} onChange={onToggleAutoAnswer} /> Auto-answer incoming calls
         </label>
       </div>
 
-      <div className="card-volume">
-        <button className={`icon-btn${state.listenMuted ? ' off' : ''}`} title={state.listenMuted ? 'Listening muted' : 'Mute listening'}
-          onClick={() => actions.setListenMuted(ICM_SLOT, !state.listenMuted)}>
-          <Icon name="volumeOff" size={20} />
-        </button>
-        <input type="range" min={0} max={100} value={Math.round(state.volume * 100)} disabled={state.listenMuted}
-          onChange={(e) => actions.setVolume(ICM_SLOT, Number(e.target.value) / 100)} aria-label="Volume" />
-        <span className="icon-static"><Icon name="volume" size={20} /></span>
+      <div className="key-grid">
+        {keys.map((b) => {
+          const isActive = !!activeKey && activeKey.id === b.id;
+          return (
+            <button key={b.id} className={`key-tile${isActive ? ' live' : ''}`}
+              disabled={!lineUp && !isActive} onClick={() => onPress(b)}
+              aria-label={isActive ? `Hang up ${buttonLabel(b)}` : `Call ${buttonLabel(b)}`}>
+              <span className="key-meta">ICM {b.target_extension}{isActive ? ' · LIVE' : ''}</span>
+              <span className="key-who">
+                <Avatar name={buttonLabel(b)} id={b.target_extension!} size={30} />
+                <span className="key-name">{buttonLabel(b)}</span>
+              </span>
+            </button>
+          );
+        })}
+        {keys.length === 0 && <div className="empty">No intercom keys assigned.</div>}
       </div>
-
-      {/* Mute/hold only mean something once media is flowing. */}
-      {live && (
-        <>
-          <div className="card-pair">
-            <button className={`pair-btn${state.listenMuted ? ' off' : ' on'}`} title={state.listenMuted ? 'Listening off' : 'Listening'}
-              onClick={() => actions.setListenMuted(ICM_SLOT, !state.listenMuted)}>
-              <Icon name={state.listenMuted ? 'volumeOff' : 'volume'} />
-            </button>
-            <button className={`pair-btn${state.muted ? ' off' : ' on'}`} title={state.muted ? 'Mic muted' : 'Mic open'}
-              onClick={() => actions.setMuted(ICM_SLOT, !state.muted)}>
-              <Icon name={state.muted ? 'micOff' : 'mic'} />
-            </button>
-          </div>
-          <button className={`ptt-wide${state.onHold ? ' held' : ''}`} onClick={onHold}>
-            {state.onHold ? 'Resume' : 'Hold'}
-          </button>
-        </>
-      )}
-
-      {keys.length > 0 && (
-        <div className="card-section">
-          <div className="card-section-label">Intercom keys</div>
-          <div className="card-section-body">
-            {keys.map((b) => {
-              const isActive = !!activeKey && activeKey.id === b.id;
-              return (
-                <button key={b.id} className={`participant-row key-row${isActive ? ' self' : ''}`}
-                  disabled={!lineUp && !isActive} onClick={() => onPress(b)}
-                  title={isActive ? 'Hang up' : `Call ${buttonLabel(b)}`}>
-                  <span className="avatar"><Icon name="user" size={14} /></span>
-                  <span className="key-name">{buttonLabel(b)}</span>
-                  <span className="key-ext">{isActive ? 'on call' : b.target_extension}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {active && (
-        <button className="card-leave" onClick={onHangup}>Hang Up <Icon name="leave" /></button>
-      )}
     </div>
   );
 }
 
-// A group's live transcript (backend transcriber, per speaker), readable
-// whether or not you've joined. Polls for new lines every 2s while open and
-// keeps the view pinned to the newest line unless you've scrolled up.
+// A group's live transcript (backend transcriber, per speaker) as a chat
+// thread, readable whether or not you've joined. Polls for new lines every 2s
+// while open and stays pinned to the newest line unless you've scrolled up.
 function TranscriptPanel({ dialCode, selfExt }: { dialCode: string; selfExt: string }) {
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const lastId = useRef<string | undefined>(undefined);
@@ -241,57 +292,29 @@ function TranscriptPanel({ dialCode, selfExt }: { dialCode: string; selfExt: str
     <div className="transcript" ref={box}
       onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24; }}>
       {lines.length === 0 && <div className="transcript-empty">Nothing said yet.</div>}
-      {lines.map((l) => (
-        <div key={l.id} className={`transcript-line${l.speaker_extension === selfExt ? ' transcript-self' : ''}`}>
-          <span className="transcript-time">{new Date(l.spoken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-          <span className="transcript-speaker">{l.speaker_name || l.speaker_extension}</span>
-          <span className="transcript-text">{l.text}</span>
-        </div>
-      ))}
+      {lines.map((l) => {
+        const name = l.speaker_name || l.speaker_extension;
+        return (
+          <div key={l.id} className={`chat-line${l.speaker_extension === selfExt ? ' self' : ''}`}>
+            <Avatar name={name} id={l.speaker_extension} size={24} />
+            <div className="chat-bubble">
+              <div className="chat-meta">
+                {name}{l.speaker_extension === selfExt ? ' (you)' : ''} · {new Date(l.spoken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </div>
+              {l.text}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// Small inline icons (Lucide-style strokes) -no icon library dependency.
-const ICON_PATHS: Record<string, string> = {
-  user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8',
-  users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8 M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75',
-  chevron: 'M6 9l6 6l6-6',
-  volume: 'M11 5L6 9H2v6h4l5 4V5z M15.54 8.46a5 5 0 0 1 0 7.07 M19.07 4.93a10 10 0 0 1 0 14.14',
-  volumeOff: 'M11 5L6 9H2v6h4l5 4V5z M22 9l-6 6 M16 9l6 6',
-  mic: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v3',
-  micOff: 'M2 2l20 20 M18.89 13.23A7 7 0 0 0 19 12v-2 M5 10v2a7 7 0 0 0 12 5 M15 9.34V5a3 3 0 0 0-5.68-1.33 M9 9v3a3 3 0 0 0 5.12 2.12 M12 19v3',
-  leave: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5l-5-5 M21 12H9',
-  join: 'M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4 M10 17l5-5l-5-5 M15 12H3',
-};
-function Icon({ name, size = 16 }: { name: keyof typeof ICON_PATHS; size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {ICON_PATHS[name].split(' M').map((d, i) => <path key={i} d={i ? `M${d}` : d} />)}
-    </svg>
-  );
-}
-
-// A titled, collapsible section of a group card -collapsed by default.
-function Section({ title, extra, children }: { title: string; extra?: React.ReactNode; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className={`card-section${open ? ' open' : ''}`}>
-      <button className="card-section-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span>{title}</span>
-        {extra}
-        <span className="chevron"><Icon name="chevron" /></span>
-      </button>
-      {open && <div className="card-section-body">{children}</div>}
-    </div>
-  );
-}
-
-// One card per assigned group, joined or not -laid out like Eyevinn's
-// open intercom call cards: header with a participant count, volume row,
-// talk controls once joined, then collapsible Participants and (for
-// transcribed groups) Transcript sections, and Join / Leave at the bottom.
+// One card per assigned group, joined or not. Header: name, state, and who's
+// in it as an avatar stack. Joined: volume, listen/mic pair and a wide Push
+// To Talk. Then collapsible Participants and (for transcribed groups)
+// Transcript, and Join / Leave at the bottom.
+const STACK_MAX = 4;
 function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onToggleJoin }: {
   button: Button; state: SlotState; actions: SlotActions; lineUp: boolean;
   participants: GroupParticipant[] | undefined; selfExt: string; onToggleJoin: () => void;
@@ -305,51 +328,45 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
     setPttHeld(false);
     actions.setMuted(slot, true);
   };
-  const count = participants?.length ?? 0;
+  const people = participants ?? [];
+  const mode = button.target_group_ptt_default ? 'PTT' : 'open mic';
 
   return (
-    <div className={`group-card slot-${state.status}${state.muted ? ' slot-muted' : ''}`}>
+    <div className={`card group-card${live ? ' is-live' : joined ? ' is-pending' : ''}`}>
       <div className="card-head">
         <ActivityLight state={state} />
         <div className="card-title">
           <div className="card-name">{buttonLabel(button)}</div>
           <div className="card-sub">
-            {GROUP_PREFIX}{button.target_group_dial_code}
-            {' · '}
-            {joined
-              ? `${state.status}${state.onHold ? ' (on hold)' : ''}`
-              : (button.target_group_ptt_default ? 'not joined · PTT' : 'not joined')}
+            {GROUP_PREFIX}{button.target_group_dial_code} · {mode} · {joined ? (live ? 'joined' : state.status) : 'not joined'}
+            {state.onHold ? ' · on hold' : ''}
           </div>
         </div>
-        <span className={`card-count${count ? ' has' : ''}`} title={`${count} in this group`}>
-          <Icon name="users" size={14} /> {count}
-        </span>
+        {people.length > 0
+          ? (
+            <span className="avatar-stack" title={people.map((p) => p.name).join(', ')} aria-label={`${people.length} in group`}>
+              {people.slice(0, STACK_MAX).map((p) => <Avatar key={p.extension} name={p.name} id={p.extension} />)}
+              {people.length > STACK_MAX && <span className="avatar more">+{people.length - STACK_MAX}</span>}
+            </span>
+          )
+          : <span className="nobody">nobody here</span>}
       </div>
 
-      <div className="card-volume">
-        <button className={`icon-btn${state.listenMuted ? ' off' : ''}`} title={state.listenMuted ? 'Listening muted' : 'Mute listening'}
-          onClick={() => actions.setListenMuted(slot, !state.listenMuted)}>
-          <Icon name="volumeOff" size={20} />
-        </button>
-        <input type="range" min={0} max={100} value={Math.round(state.volume * 100)} disabled={state.listenMuted}
-          onChange={(e) => actions.setVolume(slot, Number(e.target.value) / 100)} aria-label="Volume" />
-        <span className="icon-static"><Icon name="volume" size={20} /></span>
-      </div>
+      {joined && <VolumeRow slot={slot} state={state} actions={actions} />}
 
       {live && (
         <>
           <div className="card-pair">
-            <button className={`pair-btn${state.listenMuted ? ' off' : ' on'}`} title={state.listenMuted ? 'Listening off' : 'Listening'}
-              onClick={() => actions.setListenMuted(slot, !state.listenMuted)}>
-              <Icon name={state.listenMuted ? 'volumeOff' : 'volume'} />
+            <button className={`act-btn${state.listenMuted ? ' off' : ' on'}`} onClick={() => actions.setListenMuted(slot, !state.listenMuted)}>
+              <Icon name={state.listenMuted ? 'volumeOff' : 'volume'} /> {state.listenMuted ? 'Listen off' : 'Listening'}
             </button>
-            <button className={`pair-btn${state.muted && !pttHeld ? ' off' : ' on'}`} title={state.muted ? 'Mic muted -click to latch it open' : 'Mic open -click to mute'}
-              onClick={() => actions.setMuted(slot, !state.muted)}>
-              <Icon name={state.muted && !pttHeld ? 'micOff' : 'mic'} />
+            <button className={`act-btn${state.muted && !pttHeld ? ' off' : ' on'}`} onClick={() => actions.setMuted(slot, !state.muted)}
+              title={state.muted ? 'Click to latch the mic open' : 'Click to mute'}>
+              <Icon name={state.muted && !pttHeld ? 'micOff' : 'mic'} /> {state.muted && !pttHeld ? 'Mic muted' : 'Mic open'}
             </button>
           </div>
           <button
-            className={`ptt-wide${pttHeld ? ' live' : ''}`}
+            className={`ptt-wide${pttHeld ? ' held' : ''}`}
             disabled={!state.muted && !pttHeld}
             onPointerDown={(e) => {
               if (!state.muted) return;
@@ -366,13 +383,14 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
       )}
 
       {participants && (
-        <Section title="Participants">
-          {participants.length === 0
+        <Section title={`Participants · ${people.length}`}>
+          {people.length === 0
             ? <div className="participants-empty">Nobody in this group</div>
-            : participants.map((p) => (
-              <div key={p.extension} className={`participant-row${p.extension === selfExt ? ' self' : ''}`} title={`ext ${p.extension}`}>
-                <span className="avatar"><Icon name="user" size={14} /></span>
-                <span>{p.name}{p.extension === selfExt ? ' (you)' : ''}</span>
+            : people.map((p) => (
+              <div key={p.extension} className={`person-row${p.extension === selfExt ? ' self' : ''}`}>
+                <Avatar name={p.name} id={p.extension} size={26} />
+                <span className="person-name">{p.name}{p.extension === selfExt ? ' (you)' : ''}</span>
+                <span className="person-ext">{p.extension}</span>
               </div>
             ))}
         </Section>
@@ -385,8 +403,45 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
       )}
 
       <button className={joined ? 'card-leave' : 'card-join'} disabled={!joined && !lineUp} onClick={onToggleJoin}>
-        {joined ? <>Leave Call <Icon name="leave" /></> : <>Join <Icon name="join" /></>}
+        {joined ? 'Leave' : 'Join'}
       </button>
+    </div>
+  );
+}
+
+// Visual themes: same layout and behaviour, different look. Panel is the
+// default; the choice is a per-browser preference (localStorage), applied as
+// <html data-theme="..."> so styles.css swaps its variables.
+const THEMES = [
+  { id: 'panel', label: 'Panel' },
+  { id: 'warm', label: 'Warm' },
+] as const;
+type ThemeId = typeof THEMES[number]['id'];
+const THEME_KEY = 'open-intercom-theme';
+function loadTheme(): ThemeId {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return THEMES.some((x) => x.id === t) ? (t as ThemeId) : 'panel';
+  } catch {
+    return 'panel';
+  }
+}
+function useTheme(): [ThemeId, (t: ThemeId) => void] {
+  const [theme, setTheme] = useState<ThemeId>(loadTheme);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem(THEME_KEY, theme); } catch { /* private mode: not remembered */ }
+  }, [theme]);
+  return [theme, setTheme];
+}
+function ThemeSwitch({ theme, onChange }: { theme: ThemeId; onChange: (t: ThemeId) => void }) {
+  return (
+    <div className="theme-switch" role="group" aria-label="Theme">
+      {THEMES.map((t) => (
+        <button key={t.id} className={theme === t.id ? 'on' : ''} aria-pressed={theme === t.id} onClick={() => onChange(t.id)}>
+          {t.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -403,6 +458,7 @@ export default function App() {
   const incoming = incomingQueue[0] ?? null;
   // Not persisted -resets to true (today's behavior) on reload/re-login.
   const [intercomAutoAnswer, setIntercomAutoAnswer] = useState(true);
+  const [theme, setTheme] = useTheme();
   // The plaintext SIP password, kept in memory ONLY -never sessionStorage,
   // unlike api.ts's token -see sipUa.ts's header comment on why pbx-core's
   // digest auth needs it and ReconnectScreen on what happens when it's
@@ -648,7 +704,8 @@ export default function App() {
   return (
     <div className="client-shell">
       <div className="client-topbar">
-        <div>
+        <div className="topbar-who">
+          <span className="brand"><Icon name="headset" size={20} /> Open Intercom</span>
           <span className="client-name">{session.name}</span>
           <span className="client-ext">ext {session.extension}</span>
           <span className={`line-status line-${lineStatus}`}>
@@ -656,7 +713,10 @@ export default function App() {
             {lineStatus !== 'registered' && lineError && ` (${lineError})`}
           </span>
         </div>
-        <button onClick={handleLogout}>Log out</button>
+        <div className="topbar-actions">
+          <ThemeSwitch theme={theme} onChange={setTheme} />
+          <button onClick={handleLogout}>Log out</button>
+        </div>
       </div>
 
       {!MIC_AVAILABLE && (
@@ -690,8 +750,7 @@ export default function App() {
             card stays card-sized instead of spanning the page. */}
         <section className="client-section">
           <h2>Intercom</h2>
-          <div className="card-grid">
-            <IcmCard
+          <IcmSection
               state={icm}
               actions={actions}
               keys={directButtons}
@@ -702,7 +761,6 @@ export default function App() {
               onHangup={() => managerRef.current.hangup(ICM_SLOT)}
               onPress={handleDirectPress}
             />
-          </div>
         </section>
 
         <section className="client-section">
