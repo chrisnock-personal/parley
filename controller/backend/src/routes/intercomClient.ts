@@ -1,8 +1,8 @@
 // src/routes/intercomClient.ts -login + self for the browser intercom client page.
-import { Router } from 'express';
+import express, { Router } from 'express';
 import config from '../config';
 import { requireIntercomClientAuth, signIntercomClientToken } from '../middleware/intercomClientSession';
-import { authenticateDirectoryUser, getDirectoryUser, listButtons } from '../services/directoryUserService';
+import { authenticateDirectoryUser, avatarVersions, getAvatar, getDirectoryUser, listButtons, setAvatar } from '../services/directoryUserService';
 import { getSettings } from '../services/settingsService';
 import { audit } from '../services/auditService';
 import { recordIntercomClientCallStart, recordIntercomClientCallEnd } from '../services/pbxService';
@@ -88,12 +88,57 @@ router.get('/groups/participants', requireIntercomClientAuth, async (req, res, n
     res.json({
       participants,
       online: live.registrations.map((r) => r.extension),
+      avatars: await avatarVersions(),
       recording: {
         self: self.siprec_enabled && !!settings.siprec_srs_uri,
         icm: icmRecording,
         groups: [...recordingGroups],
       },
     });
+  } catch (err) { next(err); }
+});
+
+// ---- Profile pictures -------------------------------------------------------
+// The client uploads an already-cropped small square image; the server only
+// accepts JPEG/PNG/WebP (checked by magic bytes, not the header alone) up to
+// AVATAR_MAX_BYTES. Images are served to signed-in intercom-client users only
+// (<img> requests carry the login cookie), cached privately: the URL carries
+// a version, so a new picture is a new URL.
+const AVATAR_MAX_BYTES = 256 * 1024;
+function imageMime(b: Buffer): string | null {
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length > 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (b.length > 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  return null;
+}
+
+router.put('/me/avatar', requireIntercomClientAuth,
+  express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: AVATAR_MAX_BYTES }),
+  async (req, res, next) => {
+    try {
+      const body = req.body as Buffer;
+      const mime = Buffer.isBuffer(body) ? imageMime(body) : null;
+      if (!mime) return res.status(400).json({ error: 'Send a JPEG, PNG or WebP image' });
+      await setAvatar(req.intercomClientUser!.id, body, mime);
+      await audit(req.intercomClientUser!.extension, 'directory_user', req.intercomClientUser!.id, 'update', { avatar: 'set', bytes: body.length });
+      res.json({ ok: true });
+    } catch (err) { next(err); }
+  });
+
+router.delete('/me/avatar', requireIntercomClientAuth, async (req, res, next) => {
+  try {
+    await setAvatar(req.intercomClientUser!.id, null, null);
+    await audit(req.intercomClientUser!.extension, 'directory_user', req.intercomClientUser!.id, 'update', { avatar: 'removed' });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+router.get('/avatars/:extension', requireIntercomClientAuth, async (req, res, next) => {
+  try {
+    const a = await getAvatar(req.params.extension);
+    if (!a) return res.status(404).end();
+    res.set({ 'Content-Type': a.mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+    res.send(a.data);
   } catch (err) { next(err); }
 });
 

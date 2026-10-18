@@ -169,18 +169,24 @@ function avatarTone(key: string): number {
 // every component.
 type OpenPerson = (person: { extension: string; name: string }, anchor: HTMLElement) => void;
 const PersonCardContext = createContext<OpenPerson>(() => { /* no card host */ });
+// extension -> photo version, for people who've set a profile picture.
+const AvatarPhotosContext = createContext<Record<string, number>>({});
 
 function Avatar({ name, id, size = 28, talking = false, openable = false }: {
   name: string; id: string; size?: number; talking?: boolean; openable?: boolean;
 }) {
   const open = useContext(PersonCardContext);
-  const cls = `avatar tone-${avatarTone(id)}${talking ? ' talking' : ''}`;
+  const photoVersion = useContext(AvatarPhotosContext)[id];
+  const cls = `avatar tone-${avatarTone(id)}${talking ? ' talking' : ''}${photoVersion ? ' has-photo' : ''}`;
   const style = { width: size, height: size, fontSize: Math.round(size * 0.38) };
-  if (!openable) return <span className={cls} style={style} aria-hidden="true">{initials(name)}</span>;
+  const face = photoVersion
+    ? <img src={api.avatarUrl(id, photoVersion)} alt="" draggable={false} />
+    : initials(name);
+  if (!openable) return <span className={cls} style={style} aria-hidden="true">{face}</span>;
   return (
     <button type="button" className={`${cls} avatar-btn`} style={style} aria-label={`About ${name}`}
       onClick={(e) => { e.stopPropagation(); open({ extension: id, name }, e.currentTarget); }}>
-      {initials(name)}
+      {face}
     </button>
   );
 }
@@ -501,6 +507,93 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
   );
 }
 
+// Crop a chosen image to a centred square and shrink it to PHOTO_SIZE px
+// JPEG in the browser, so uploads are a few KB whatever the camera made.
+const PHOTO_SIZE = 192;
+async function cropToSquare(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = PHOTO_SIZE;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('This browser can\'t process images');
+  ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, PHOTO_SIZE, PHOTO_SIZE);
+  bitmap.close();
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode the image'))), 'image/jpeg', 0.85));
+}
+
+// "My profile": opened from your name in the top bar. Your picture (change /
+// remove), who you are, your line, whether your calls are recorded, and the
+// groups you have.
+function ProfileMenu({ name, extension, lineStatus, recorded, groups, hasPhoto, onPhotoChanged }: {
+  name: string; extension: string; lineStatus: string; recorded: boolean; groups: string[];
+  hasPhoto: boolean; onPhotoChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const wrap = useRef<HTMLDivElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => { if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true); setError(null);
+    try {
+      await api.uploadAvatar(await cropToSquare(file));
+      onPhotoChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  };
+  const remove = async () => {
+    setBusy(true); setError(null);
+    try { await api.removeAvatar(); onPhotoChanged(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="profile" ref={wrap}>
+      <button className="profile-btn" aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((v) => !v)}>
+        <Avatar name={name} id={extension} size={28} />
+        <span className="client-name">{name}</span>
+        <span className="client-ext">ext {extension}</span>
+        <span className="chevron"><Icon name="chevron" size={14} /></span>
+      </button>
+      {open && (
+        <div className="profile-panel" role="dialog" aria-label="My profile">
+          <div className="profile-photo">
+            <Avatar name={name} id={extension} size={88} />
+            <div className="profile-photo-actions">
+              <button disabled={busy} onClick={() => fileInput.current?.click()}>{busy ? 'Saving…' : hasPhoto ? 'Change photo' : 'Add photo'}</button>
+              {hasPhoto && <button className="link-btn" disabled={busy} onClick={remove}>Remove photo</button>}
+              <input ref={fileInput} type="file" accept="image/*" hidden onChange={(e) => void pick(e.target.files?.[0])} />
+            </div>
+          </div>
+          {error && <div className="login-error">{error}</div>}
+          <div className="profile-name">{name}</div>
+          <div className="profile-rows">
+            <div><span className="dim">Extension</span><span className="mono">{extension}</span></div>
+            <div><span className="dim">Line</span><span>{lineStatus === 'registered' ? 'Up' : lineStatus === 'connecting' ? 'Connecting…' : 'Down'}</span></div>
+            <div><span className="dim">Call recording</span><span>{recorded ? 'Your calls are recorded' : 'Off'}</span></div>
+            <div><span className="dim">Groups</span><span>{groups.length ? groups.join(', ') : 'None'}</span></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Visual themes: same layout and behaviour, different look. Panel is the
 // default; the choice is a per-browser preference (localStorage), applied as
 // <html data-theme="..."> so styles.css swaps its variables.
@@ -567,7 +660,8 @@ export default function App() {
   // call list), so a group shows who's in it even if you haven't joined.
   const [participants, setParticipants] = useState<Record<string, GroupParticipant[]> | null>(null);
   // Who's online and what's being recorded, from the same poll.
-  const [live, setLive] = useState<Pick<LiveState, 'online' | 'recording'>>({ online: [], recording: { self: false, icm: false, groups: [] } });
+  const [live, setLive] = useState<Pick<LiveState, 'online' | 'recording' | 'avatars'>>({ online: [], recording: { self: false, icm: false, groups: [] }, avatars: {} });
+  const [pollTick, setPollTick] = useState(0); // bump to poll right away (e.g. after changing your photo)
   const [card, setCard] = useState<{ person: { extension: string; name: string }; anchor: DOMRect } | null>(null);
   const openPerson = useCallback<OpenPerson>((person, el) => setCard({ person, anchor: el.getBoundingClientRect() }), []);
   const closeCard = useCallback(() => setCard(null), []);
@@ -609,13 +703,13 @@ export default function App() {
       .then((r) => {
         if (stopped) return;
         setParticipants(r.participants);
-        setLive({ online: r.online, recording: r.recording });
+        setLive({ online: r.online, recording: r.recording, avatars: r.avatars ?? {} });
       })
       .catch(() => { /* keep last known */ });
     poll();
     const t = window.setInterval(poll, 1000);
     return () => { stopped = true; window.clearInterval(t); };
-  }, [session, needsSipPassword]);
+  }, [session, needsSipPassword, pollTick]);
 
   // Reattach an existing intercom client session on a same-tab reload.
   useEffect(() => {
@@ -827,13 +921,15 @@ export default function App() {
   }
 
   return (
+    <AvatarPhotosContext.Provider value={live.avatars}>
     <PersonCardContext.Provider value={openPerson}>
     <div className="client-shell">
       <div className="client-topbar">
         <div className="topbar-who">
           <span className="brand"><Icon name="headset" size={20} /> Open Intercom</span>
-          <span className="client-name">{session.name}</span>
-          <span className="client-ext">ext {session.extension}</span>
+          <ProfileMenu name={session.name} extension={session.extension} lineStatus={lineStatus}
+            recorded={live.recording.self} groups={groupButtons.map(buttonLabel)}
+            hasPhoto={!!live.avatars[session.extension]} onPhotoChanged={() => setPollTick((t) => t + 1)} />
           <span className={`line-status line-${lineStatus}`}>
             {lineStatus === 'registered' ? '● line up' : lineStatus === 'connecting' ? '○ connecting…' : '✕ line down -retrying'}
             {lineStatus !== 'registered' && lineError && ` (${lineError})`}
@@ -911,5 +1007,6 @@ export default function App() {
       {personCard}
     </div>
     </PersonCardContext.Provider>
+    </AvatarPhotosContext.Provider>
   );
 }

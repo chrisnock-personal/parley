@@ -28,6 +28,7 @@ export interface TranscriptLine {
 export interface LiveState {
   participants: Record<string, GroupParticipant[]>; // dial code -> who's in it
   online: string[];                                  // registered extensions
+  avatars: Record<string, number>;                   // extension -> photo version, for people with a photo
   recording: {
     self: boolean;     // this user's calls are recorded (policy: their switch + a recording server)
     icm: boolean;      // their current direct call is being recorded right now
@@ -90,6 +91,18 @@ export const api = {
   // A group's live transcript; `after` = last line id seen, for polling.
   groupTranscript(dialCode: string, after?: string): Promise<{ transcribing: boolean; lines: TranscriptLine[] }> {
     return req(`/groups/${encodeURIComponent(dialCode)}/transcript${after ? `?after=${after}` : ''}`);
+  },
+
+  // Profile picture: an already-cropped image (see App.tsx cropToSquare).
+  uploadAvatar(image: Blob): Promise<{ ok: boolean }> {
+    return req('/me/avatar', { method: 'PUT', headers: { 'Content-Type': image.type || 'image/jpeg' }, body: image });
+  },
+  removeAvatar(): Promise<{ ok: boolean }> {
+    return req('/me/avatar', { method: 'DELETE' });
+  },
+  // Served to signed-in users only (the login cookie rides along with <img>).
+  avatarUrl(extension: string, version: number): string {
+    return `${BASE}/avatars/${encodeURIComponent(extension)}?v=${version}`;
   },
 
   // dial code -> who's in that group right now (see the backend route).

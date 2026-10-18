@@ -219,3 +219,27 @@ export async function removeButton(directoryUserId: string, buttonId: string): P
     [buttonId, directoryUserId]);
   if (result.rowCount === 0) throw createError('Button not found', 404);
 }
+
+// ---- Profile pictures (migration 014) -------------------------------------
+
+/** extension -> version (ms since epoch of the last change), for everyone
+ * who has a picture. Versions go into the image URL, so caches refresh. */
+export async function avatarVersions(): Promise<Record<string, number>> {
+  const { rows } = await query<{ extension: string; v: string }>(
+    `SELECT extension, (EXTRACT(EPOCH FROM avatar_updated_at) * 1000)::bigint AS v
+       FROM intercom_directory_users WHERE avatar IS NOT NULL AND enabled = TRUE`);
+  return Object.fromEntries(rows.map((r) => [r.extension, Number(r.v)]));
+}
+
+export async function getAvatar(extension: string): Promise<{ data: Buffer; mime: string } | null> {
+  const r = await queryOne<{ avatar: Buffer; avatar_mime: string }>(
+    `SELECT avatar, avatar_mime FROM intercom_directory_users WHERE extension = $1 AND avatar IS NOT NULL`, [extension]);
+  return r ? { data: r.avatar, mime: r.avatar_mime } : null;
+}
+
+export async function setAvatar(id: string, data: Buffer | null, mime: string | null): Promise<void> {
+  await query(
+    `UPDATE intercom_directory_users SET avatar = $1, avatar_mime = $2,
+            avatar_updated_at = CASE WHEN $1::bytea IS NULL THEN NULL ELSE now() END
+      WHERE id = $3`, [data, mime, id]);
+}
