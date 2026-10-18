@@ -1,5 +1,5 @@
 {
-  "name": "intercom-transcriber",
+  "name": "parley-transcriber",
   "version": "0.1.0",
   "description": "Live per-group transcription for Parley: taps each member's voice from rtpengine and transcribes it with whisper",
   "main": "dist/index.js",

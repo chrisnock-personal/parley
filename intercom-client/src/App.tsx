@@ -352,11 +352,17 @@ function DirectoryPanel({ directory, keys, online, lineUp, activeExt, onCall, on
   );
 }
 
+// Device preferences used to be stored under 'open-intercom-*' keys (the
+// product's name until 2026-10-18); read those once if the new key is unset.
+function storedPref(key: string): string | null {
+  return localStorage.getItem(key) ?? localStorage.getItem(key.replace(/^parley-/, 'open-intercom-'));
+}
+
 // Which Intercom tab is showing, remembered per device.
 type IcmTab = 'assigned' | 'all';
-const ICM_TAB_KEY = 'open-intercom-icm-tab';
+const ICM_TAB_KEY = 'parley-icm-tab';
 function loadIcmTab(): IcmTab {
-  try { return localStorage.getItem(ICM_TAB_KEY) === 'all' ? 'all' : 'assigned'; } catch { return 'assigned'; }
+  try { return storedPref(ICM_TAB_KEY) === 'all' ? 'all' : 'assigned'; } catch { return 'assigned'; }
 }
 
 // The Intercom section: a call card (who you're on with, mic / hold / hang up,
@@ -701,10 +707,10 @@ const THEMES = [
   { id: 'warm', label: 'Warm' },
 ] as const;
 type ThemeId = typeof THEMES[number]['id'];
-const THEME_KEY = 'open-intercom-theme';
+const THEME_KEY = 'parley-theme';
 function loadTheme(): ThemeId {
   try {
-    const t = localStorage.getItem(THEME_KEY);
+    const t = storedPref(THEME_KEY);
     return THEMES.some((x) => x.id === t) ? (t as ThemeId) : 'panel';
   } catch {
     return 'panel';
@@ -904,11 +910,17 @@ export default function App() {
     setSession(s);
   }, []);
 
+  // Checked with the server first: a wrong password gets a clear error, and
+  // a right one refreshes the stored SIP hash if it's stale (see
+  // authenticateDirectoryUser), so the registration that follows can work.
   const handleReconnect = useCallback((password: string) => {
-    passwordRef.current = password;
-    setSipAuthError(null);
-    setReconnectTick((t) => t + 1);
-  }, []);
+    if (!session) return;
+    api.login(session.extension, password).then(() => {
+      passwordRef.current = password;
+      setSipAuthError(null);
+      setReconnectTick((t) => t + 1);
+    }, (err: Error) => setSipAuthError(err.message));
+  }, [session]);
 
   const handleLogout = useCallback(() => {
     managerRef.current.hangupAll();

@@ -9,7 +9,7 @@ import { createError } from '../middleware/errorHandler';
 // Must match pbx-core's SIP_REALM (src/digestAuth.ts) -separate
 // deployables, no shared code between them, same convention as
 // GROUP_PREFIX elsewhere in this codebase. If you change one, change both.
-const SIP_REALM = 'open-intercom';
+const SIP_REALM = 'parley';
 
 // RFC 2617 HA1 = MD5(username:realm:password), computed once here so the
 // plaintext password never has to live at the SIP layer -pbx-core only
@@ -146,12 +146,22 @@ export async function resetPassword(id: string, password: string): Promise<void>
 
 /** Used by the intercom client login endpoint. Extension is the login identifier. */
 export async function authenticateDirectoryUser(extension: string, password: string): Promise<DirectoryUser> {
-  const user = await queryOne<DirectoryUser & { password_hash: string }>(
+  const user = await queryOne<DirectoryUser & { password_hash: string; sip_ha1: string | null }>(
     `SELECT * FROM intercom_directory_users WHERE LOWER(extension) = LOWER($1) AND enabled = TRUE`,
     [extension]);
   if (!user) throw createError('Invalid credentials', 401);
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) throw createError('Invalid credentials', 401);
+  // Login is the one moment the plaintext password is here, so bring the
+  // SIP digest hash up to date if it's stale: after the realm changed
+  // (open-intercom -> parley, 2026-10-18), or after an extension change
+  // nulled it (see updateDirectoryUser). The client registers right after
+  // logging in; pbx-core's HA1 cache (15 s) may make that first attempt
+  // fail once, and JsSIP retries.
+  const ha1 = computeSipHa1(user.extension, password);
+  if (user.sip_ha1 !== ha1) {
+    await query(`UPDATE intercom_directory_users SET sip_ha1 = $1 WHERE id = $2`, [ha1, user.id]);
+  }
   return user;
 }
 

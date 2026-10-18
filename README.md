@@ -214,7 +214,7 @@ proxied through the same nginx at `/ws`.
 
 The CA has **no** name constraints: iOS rejected a name-constrained version
 (see `controller/frontend/entrypoint.sh`). Its private key never leaves the
-`intercom-tls-certs` volume, but anyone holding that key could mint
+`parley-tls-certs` volume, but anyone holding that key could mint
 certificates that trusting devices would accept for any site, so protect
 the volume, and remove the profile from devices you no longer use. The server certificate follows Apple's rules (825-day validity,
 server-auth usage) and is re-issued automatically within 30 days of expiry.
@@ -320,10 +320,14 @@ in the middle. It lives in one place, `brand/`:
 - `brand/public/`: `favicon.svg`, `apple-touch-icon.png` (iPad home screen)
   and `icon-512.png`, copied into both builds as Vite's `publicDir`.
 
-The internal identifiers keep the old name on purpose: the SIP realm
-(`open-intercom`, baked into every stored SIP password hash, so changing it
-means resetting every user's password), the `Call-Info` host, browser
-storage keys, container names and the repo name.
+Everything else was renamed from `open-intercom` on 2026-10-18 too: the
+GitHub repo (`chrisnock-personal/parley`), containers (`parley-*`), volumes,
+packages, the SIP realm (`parley`) and browser storage keys. The realm is
+part of every stored SIP password hash; a user's hash is refreshed the next
+time they log in to the client, so nobody needs a password reset. The
+generic word "intercom" stays where it names the thing rather than the
+product: the intercom client (`intercom-client/`, `/intercom-client/`), the
+`intercom_*` tables and the `intercom` database.
 
 A second logo is kept in reserve, for if the product grows text chat
 alongside voice: a speech bubble with a live level meter (`P5` on the design

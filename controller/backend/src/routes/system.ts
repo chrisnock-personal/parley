@@ -109,7 +109,7 @@ router.get('/health', async (_req: Request, res: Response, next: NextFunction) =
        LIMIT 5`
     );
 
-    // pbx-core reachability -genuinely new vs. WTNF, since open-intercom's
+    // pbx-core reachability -genuinely new vs. WTNF, since Parley's
     // actual "is the phone system up" signal lives in pbx-core's own
     // in-memory admin endpoint, not the DB. Same fetch+timeout pattern as
     // pbxCoreService.ts.
@@ -207,12 +207,12 @@ router.get('/audit', async (req: Request, res: Response, next: NextFunction) => 
 // thin raw client over a heavy dependency for a single read-only call (same
 // call pbx-core/src/admin.ts made for its own tiny HTTP surface).
 const SERVICE_CONTAINERS: Record<string, string> = {
-  postgres:             'intercom-postgres',
-  'controller-backend': 'intercom-controller-backend',
-  'controller-frontend': 'intercom-controller-frontend',
-  'pbx-core':           'intercom-pbx-core',
-  rtpengine:            'intercom-rtpengine',
-  freeswitch:           'intercom-freeswitch',
+  postgres:             'parley-postgres',
+  'controller-backend': 'parley-controller-backend',
+  'controller-frontend': 'parley-controller-frontend',
+  'pbx-core':           'parley-pbx-core',
+  rtpengine:            'parley-rtpengine',
+  freeswitch:           'parley-freeswitch',
 };
 
 // podman's libpod logs endpoint has been observed (this build) to return

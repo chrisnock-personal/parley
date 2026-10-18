@@ -28,7 +28,7 @@ const execFileAsync = promisify(execFile);
 // sandboxed to this one directory so an admin JSON request can't overwrite
 // arbitrary files on the controller-backend container (configs, binaries,
 // etc.) the way an unrestricted path.join+copyFileSync would allow.
-const LOCAL_ARCHIVE_DIR = process.env.LOCAL_ARCHIVE_DIR || path.join(os.tmpdir(), 'intercom-archives');
+const LOCAL_ARCHIVE_DIR = process.env.LOCAL_ARCHIVE_DIR || path.join(os.tmpdir(), 'parley-archives');
 
 function pgEnv(): NodeJS.ProcessEnv {
   // PGPASSWORD via env, never on the command line (would otherwise leak
@@ -42,12 +42,12 @@ function pgConnArgs(): string {
 
 // ── Backup ──────────────────────────────────────────────────────────────────
 router.post('/backup', async (req: Request, res: Response, next: NextFunction) => {
-  const tmpFile = path.join(os.tmpdir(), `intercom-backup-${Date.now()}.sql`);
+  const tmpFile = path.join(os.tmpdir(), `parley-backup-${Date.now()}.sql`);
   try {
     await execAsync(`pg_dump ${pgConnArgs()} -f ${tmpFile}`, { env: pgEnv(), timeout: 120_000 });
     const stat = fs.statSync(tmpFile);
     res.setHeader('Content-Type', 'application/sql');
-    res.setHeader('Content-Disposition', `attachment; filename="intercom-backup-${new Date().toISOString().slice(0,10)}.sql"`);
+    res.setHeader('Content-Disposition', `attachment; filename="parley-backup-${new Date().toISOString().slice(0,10)}.sql"`);
     res.setHeader('Content-Length', stat.size);
     const stream = fs.createReadStream(tmpFile);
     stream.pipe(res);
@@ -69,7 +69,7 @@ router.post('/backup', async (req: Request, res: Response, next: NextFunction) =
 // doesn't -this fixes that gap properly rather than repeating it.)
 router.post('/restore', express.text({ type: '*/*', limit: '50mb' }),
   async (req: Request, res: Response, next: NextFunction) => {
-    const tmpFile = path.join(os.tmpdir(), `intercom-restore-${Date.now()}.sql`);
+    const tmpFile = path.join(os.tmpdir(), `parley-restore-${Date.now()}.sql`);
     try {
       if (typeof req.body !== 'string' || !req.body.startsWith('--')) {
         throw new Error('Invalid backup file -must be a PostgreSQL SQL dump');
@@ -175,7 +175,7 @@ router.post('/db/archive', async (req: Request, res: Response, next: NextFunctio
     if (!Number.isInteger(days) || days < 0) {
       return res.status(400).json({ error: 'days must be a non-negative integer' });
     }
-    const archiveName = `intercom-archive-${new Date().toISOString().slice(0,10)}-${days}d.sql.gz`;
+    const archiveName = `parley-archive-${new Date().toISOString().slice(0,10)}-${days}d.sql.gz`;
     const tmpFile = path.join(os.tmpdir(), archiveName);
 
     await execAsync(

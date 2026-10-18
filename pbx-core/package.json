@@ -1,5 +1,5 @@
 {
-  "name": "intercom-pbx-core",
+  "name": "parley-pbx-core",
   "version": "0.1.0",
   "description": "Custom SIP PBX brain for Parley (drachtio + rtpengine)",
   "main": "dist/index.js",

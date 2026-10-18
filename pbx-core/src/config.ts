@@ -17,7 +17,7 @@ export const config = {
   // INVITE, and empirically took Alert-Info down with it too (boot-tested:
   // fixing just this one line was enough to make auto-answer work at all).
   autoAnswerHeaders: {
-    'Call-Info': '<sip:pbx-core@open-intercom.local>;answer-after=0', // Polycom/Cisco-style
+    'Call-Info': '<sip:pbx-core@parley.local>;answer-after=0', // Polycom/Cisco-style
     'Alert-Info': '<urn:alert:service:auto-answer>',
   },
 
@@ -29,7 +29,7 @@ export const config = {
   // It MUST be routable: the far end sends in-dialog requests (BYE,
   // re-INVITE) to the Contact. A browser leg doesn't care (JsSIP always uses
   // its own WebSocket), but FreeSWITCH does. With the old placeholder host
-  // (open-intercom.local) it could never resolve where to send its BYE, so
+  // (parley.local) it could never resolve where to send its BYE, so
   // any hangup FreeSWITCH initiated (kick, restart, media timeout) silently
   // never reached pbx-core, leaving a stale call in calls.ts and a leaked
   // rtpengine session (found 2026-10-17; likely also behind the stale
@@ -79,5 +79,5 @@ export const config = {
   // Must match controller-backend's directoryUserService.ts SIP_REALM
   // constant -separate deployables, no shared code, same convention as
   // GROUP_PREFIX. If you change one, change both.
-  sipRealm: 'open-intercom',
+  sipRealm: 'parley',
 };

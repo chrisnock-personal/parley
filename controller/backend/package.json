@@ -1,5 +1,5 @@
 {
-  "name": "intercom-controller",
+  "name": "parley-controller",
   "version": "0.1.0",
   "description": "Intercom controller -users, audit, endpoints, health, session orchestration",
   "main": "dist/index.js",

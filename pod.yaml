@@ -13,12 +13,12 @@ kind: Pod
 metadata:
   name: intercom
   labels:
-    app: open-intercom
+    app: parley
 spec:
   hostNetwork: true          # simplest correct choice for multi-subnet media
   containers:
     - name: pbx-core
-      image: localhost/intercom-pbx-core:latest
+      image: localhost/parley_pbx-core:latest
       env:
         - name: DRACHTIO_HOST
           value: "127.0.0.1"

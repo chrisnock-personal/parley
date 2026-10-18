@@ -18,13 +18,13 @@
 services:
   postgres:
     image: docker.io/library/postgres:16-alpine
-    container_name: intercom-postgres
+    container_name: parley-postgres
     environment:
       POSTGRES_DB:       ${PGDATABASE:-intercom}
       POSTGRES_USER:     ${PGUSER:-intercom_user}
       POSTGRES_PASSWORD: ${PGPASSWORD:-intercom_pass}
     volumes:
-      - intercom-pgdata:/var/lib/postgresql/data
+      - parley-pgdata:/var/lib/postgresql/data
     ports:
       - "5433:5432"   # host 5433 avoids clashing with any local Postgres
     restart: unless-stopped
@@ -38,7 +38,7 @@ services:
     build:
       context: .
       dockerfile: controller/backend/Containerfile
-    container_name: intercom-controller-backend
+    container_name: parley-controller-backend
     # Rootless podman remaps container root to a subordinate host UID (see
     # /etc/subuid), NOT the invoking host user -so a container running as
     # root gets EACCES on the mounted podman.sock below (owned by the host
@@ -114,7 +114,7 @@ services:
     build:
       context: .
       dockerfile: controller/frontend/Containerfile
-    container_name: intercom-controller-frontend
+    container_name: parley-controller-frontend
     depends_on:
       - controller-backend
     environment:
@@ -130,7 +130,7 @@ services:
       # nginx's redirect of non-localhost /intercom-client/ visits to HTTPS.
       HTTPS_PORT: "8445"
     volumes:
-      - intercom-tls-certs:/etc/nginx/tls
+      - parley-tls-certs:/etc/nginx/tls
     ports:
       - "8080:80"
       # Host 8443 is taken on this machine by callowl-frontend and 8444 by
@@ -144,7 +144,7 @@ services:
     build:
       context: ./pbx-core
       dockerfile: Containerfile
-    container_name: intercom-pbx-core
+    container_name: parley-pbx-core
     network_mode: host   # required for reachable media anchoring across subnets
     environment:
       DRACHTIO_HOST:   "127.0.0.1"
@@ -190,7 +190,7 @@ services:
     build:
       context: ./images/rtpengine
       dockerfile: Containerfile
-    container_name: intercom-rtpengine
+    container_name: parley-rtpengine
     network_mode: host   # anchors media on the host's routed interface
     environment:
       RTPENGINE_PUBLIC_IP: ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
@@ -204,14 +204,14 @@ services:
   # (images/freeswitch/dialplan/intercom.xml) answers and joins mod_conference.
   # No ESL/ctrl-channel wiring -PTT mute happens at the SIP endpoint instead.
   # NB: built from drachtio/drachtio-freeswitch-base; not boot-tested against
-  # the current base tag here, so check `podman logs intercom-freeswitch` and
-  # `podman exec -ti intercom-freeswitch /usr/local/freeswitch/bin/fs_cli -x "sofia status"`
+  # the current base tag here, so check `podman logs parley-freeswitch` and
+  # `podman exec -ti parley-freeswitch /usr/local/freeswitch/bin/fs_cli -x "sofia status"`
   # on first start.
   freeswitch:
     build:
       context: ./images/freeswitch
       dockerfile: Containerfile
-    container_name: intercom-freeswitch
+    container_name: parley-freeswitch
     network_mode: host   # RTP must be directly reachable for the routed/
                           # multi-subnet case; the "intercom" sip_profile
                           # binds to FREESWITCH_BIND_IP below, NOT loopback.
@@ -237,7 +237,7 @@ services:
     build:
       context: ./transcriber
       dockerfile: Containerfile
-    container_name: intercom-transcriber
+    container_name: parley-transcriber
     network_mode: host   # receives RTP from rtpengine on local ports; reaches pbx-core/rtpengine/whisper on this host
     environment:
       PBX_STATUS_URL: "http://127.0.0.1:9080/status"
@@ -261,5 +261,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  intercom-pgdata:
-  intercom-tls-certs:
+  parley-pgdata:
+  parley-tls-certs:

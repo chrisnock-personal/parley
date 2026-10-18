@@ -24,7 +24,7 @@ import * as calls from './calls';
 
 export interface RecordedLeg {
   tag: string;        // rtpengine monologue (from-tag) whose SENT media this stream carries
-  aor: string;        // e.g. sip:2001@open-intercom, or sip:*8cameras@open-intercom for a group mix
+  aor: string;        // e.g. sip:2001@parley, or sip:*8cameras@parley for a group mix
   name: string;       // fallback display name; a directory user's own name wins
   extension?: string; // set for a directory user's leg -their siprec_enabled decides recording
 }

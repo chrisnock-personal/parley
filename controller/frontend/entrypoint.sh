@@ -81,7 +81,7 @@ subjectAltName = $SAN
 authorityKeyIdentifier = keyid
 subjectKeyIdentifier = hash
 CNF
-  openssl req -new -nodes -newkey rsa:2048 -sha256 -subj "/CN=open-intercom" \
+  openssl req -new -nodes -newkey rsa:2048 -sha256 -subj "/CN=parley" \
     -keyout "$KEY_FILE" -out /tmp/leaf.csr
   openssl x509 -req -in /tmp/leaf.csr -CA "$CA_CERT" -CAkey "$CA_KEY" \
     -set_serial "0x$(openssl rand -hex 16)" -days 825 -sha256 \
