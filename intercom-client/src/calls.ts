@@ -51,12 +51,13 @@ export interface SlotState {
   listenMuted: boolean;
   volume: number; // 0..1, applied to this slot's <audio> element
   active: boolean; // inbound audio above threshold right now (someone is talking)
+  connectedAt: number | null; // epoch ms the call connected: drives the call timer
 }
 
 export type SlotStates = Record<SlotId, SlotState>;
 type Listener = (states: SlotStates) => void;
 
-const IDLE_CALL = { status: 'idle' as const, label: null, counterpart: null, muted: false, onHold: false, active: false };
+const IDLE_CALL = { status: 'idle' as const, label: null, counterpart: null, muted: false, onHold: false, active: false, connectedAt: null };
 export const idleSlot = (): SlotState => ({ ...IDLE_CALL, listenMuted: false, volume: 1 });
 
 // Browsers block .play() that isn't tied to a user gesture, and the play()
@@ -155,7 +156,7 @@ export class CallManager {
       // isn't guaranteed to exist on the peer connection until negotiation
       // has actually completed -getUserMedia is async.
       if (initialMuted) this.applyMuteToSession(session, true);
-      this.patch(slot, { status: 'connected' });
+      this.patch(slot, { status: 'connected', connectedAt: Date.now() });
       this.ensureActivityPolling();
     });
     // jssip creates the RTCPeerConnection and emits 'peerconnection'

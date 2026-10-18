@@ -118,6 +118,20 @@ function ActivityLight({ state }: { state: SlotState }) {
   return <span className={`activity${on ? ' activity-on' : ''}`} title={on ? 'Audio on this line' : 'Quiet'} />;
 }
 
+// How long the call on a slot has been connected, as a chip: m:ss, then
+// h:mm:ss after an hour. Ticks once a second while shown.
+function CallTimer({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = Math.max(0, Math.floor((now - since) / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const text = h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+  return <span className="call-timer" title="Time on this call">{text}</span>;
+}
+
 type SlotActions = {
   setMuted: (slot: SlotId, muted: boolean) => void;
   setListenMuted: (slot: SlotId, v: boolean) => void;
@@ -405,6 +419,7 @@ function IcmSection({ state, actions, keys, directory, lineUp, recording, online
               {active ? `${state.status}${state.onHold ? ' · on hold' : ''}` : 'press a key to call'}
             </div>
           </div>
+          {live && state.connectedAt && <CallTimer since={state.connectedAt} />}
           <ActivityLight state={state} />
         </div>
         <VolumeRow slot={ICM_SLOT} state={state} actions={actions} />
@@ -511,9 +526,10 @@ function TranscriptPanel({ dialCode, selfExt }: { dialCode: string; selfExt: str
 // To Talk. Then collapsible Participants and (for transcribed groups)
 // Transcript, and Join / Leave at the bottom.
 const STACK_MAX = 4;
-function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, onToggleJoin }: {
+function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, onToggleJoin, onCollapse }: {
   button: Button; state: SlotState; actions: SlotActions; lineUp: boolean; recording: boolean;
   participants: GroupParticipant[] | undefined; selfExt: string; onToggleJoin: () => void;
+  onCollapse?: () => void; // an unjoined group opened from its tile: shrink it back
 }) {
   const slot = lineSlot(button.target_group_dial_code!);
   const joined = state.status !== 'idle';
@@ -548,6 +564,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
             </span>
           </div>
         </div>
+        {live && state.connectedAt && <CallTimer since={state.connectedAt} />}
         {people.length > 0
           ? (
             <span className="avatar-stack" title={people.map((p) => p.name + (p.talking ? ' (talking)' : '')).join(', ')}
@@ -557,6 +574,11 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
             </span>
           )
           : <span className="nobody">nobody here</span>}
+        {onCollapse && (
+          <button className="card-collapse" onClick={onCollapse} title="Show less" aria-label={`Show less of ${buttonLabel(button)}`}>
+            <Icon name="chevron" />
+          </button>
+        )}
       </div>
 
       {joined && <VolumeRow slot={slot} state={state} actions={actions} />}
@@ -612,6 +634,41 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
       <button className={joined ? 'card-leave' : 'card-join'} disabled={!joined && !lineUp} onClick={onToggleJoin}>
         {joined ? 'Leave' : 'Join'}
       </button>
+    </div>
+  );
+}
+
+// A group you haven't joined, as a small tile: who's in it, whether anyone
+// is talking, its tags, and Join. Clicking the tile (not Join) opens the
+// full card, for its participants and transcript.
+function GroupTile({ button, participants, recording, lineUp, onJoin, onOpen }: {
+  button: Button; participants: GroupParticipant[] | undefined; recording: boolean; lineUp: boolean;
+  onJoin: () => void; onOpen: () => void;
+}) {
+  const people = [...(participants ?? [])].sort((x, y) => Number(y.talking) - Number(x.talking));
+  const talking = people.some((p) => p.talking);
+  const name = buttonLabel(button);
+  return (
+    <div className="group-tile">
+      <button className="tile-open" onClick={onOpen} title={`Show ${name}`}>
+        <span className="tile-head">
+          <span className={`activity${talking ? ' activity-on' : ''}`} />
+          <span className="tile-name">{name}</span>
+        </span>
+        <span className="tile-meta">
+          {people.length > 0
+            ? (
+              <span className="avatar-stack" aria-label={`${people.length} in group`}>
+                {people.slice(0, STACK_MAX).map((p) => <Avatar key={p.extension} name={p.name} id={p.extension} size={24} talking={p.talking} />)}
+                {people.length > STACK_MAX && <span className="avatar more" style={{ width: 24, height: 24 }}>+{people.length - STACK_MAX}</span>}
+              </span>
+            )
+            : <span className="nobody">nobody here</span>}
+          {recording && <RecTag title="Someone in this group is being recorded, so the group's audio is recorded" />}
+          {button.target_group_transcribe_enabled && <span className="info-tag">Transcribed</span>}
+        </span>
+      </button>
+      <button className="card-join tile-join" disabled={!lineUp} onClick={onJoin}>Join</button>
     </div>
   );
 }
@@ -751,6 +808,8 @@ export default function App() {
   const [incomingQueue, setIncomingQueue] = useState<{ session: any; from: string }[]>([]);
   const incoming = incomingQueue[0] ?? null;
   // Not persisted -resets to true (today's behavior) on reload/re-login.
+  // Unjoined groups opened from their tile into a full card (dial codes).
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [intercomAutoAnswer, setIntercomAutoAnswer] = useState(true);
   const [theme, setTheme] = useTheme();
   // The plaintext SIP password, kept in memory ONLY -never sessionStorage,
@@ -1025,6 +1084,20 @@ export default function App() {
     bs.filter((b, i) => bs.findIndex((x) => key(x) === key(b)) === i);
   const directButtons = firstPerTarget(session.buttons.filter((b) => b.button_type === 'direct'), (b) => b.target_extension);
   const groupButtons = firstPerTarget(session.buttons.filter((b) => b.button_type === 'group'), (b) => b.target_group_dial_code);
+  const isJoined = (b: Button) => (slotStates[lineSlot(b.target_group_dial_code!)]?.status ?? 'idle') !== 'idle';
+  const fullGroups = groupButtons.filter((b) => isJoined(b) || openGroups.has(b.target_group_dial_code!));
+  const tileGroups = groupButtons.filter((b) => !fullGroups.includes(b));
+  const setOpenGroup = (code: string, open: boolean) => setOpenGroups((prev) => {
+    const next = new Set(prev);
+    if (open) next.add(code); else next.delete(code);
+    return next;
+  });
+  // Joining or leaving clears "opened", so a group you leave goes back to
+  // being a tile.
+  const joinOrLeave = (b: Button) => {
+    setOpenGroup(b.target_group_dial_code!, false);
+    handleLineToggle(b);
+  };
   const actions: SlotActions = {
     setMuted: (slot, m) => managerRef.current.setMuted(slot, m),
     setListenMuted: (slot, v) => managerRef.current.setListenMuted(slot, v),
@@ -1123,14 +1196,34 @@ export default function App() {
 
         <section className="client-section">
           <h2>Groups</h2>
-          <div className="card-grid">
-            {groupButtons.map((b) => (
-              <GroupStrip key={b.id} button={b} state={slotStates[lineSlot(b.target_group_dial_code!)] ?? idleSlot()}
-                actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
-                selfExt={session.extension} recording={live.recording.groups.includes(b.target_group_dial_code!)}
-                onToggleJoin={() => handleLineToggle(b)} />
-            ))}
-          </div>
+          {/* Joined groups (and any opened from a tile) get the full card;
+              the rest are small tiles. */}
+          {fullGroups.length > 0 && (
+            <div className="card-grid">
+              {fullGroups.map((b) => {
+                const state = slotStates[lineSlot(b.target_group_dial_code!)] ?? idleSlot();
+                return (
+                  <GroupStrip key={b.id} button={b} state={state}
+                    actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
+                    selfExt={session.extension} recording={live.recording.groups.includes(b.target_group_dial_code!)}
+                    onToggleJoin={() => joinOrLeave(b)}
+                    onCollapse={state.status === 'idle' ? () => setOpenGroup(b.target_group_dial_code!, false) : undefined} />
+                );
+              })}
+            </div>
+          )}
+          {tileGroups.length > 0 && (
+            <>
+              {fullGroups.length > 0 && <div className="sub-head">Other groups · {tileGroups.length}</div>}
+              <div className="tile-grid">
+                {tileGroups.map((b) => (
+                  <GroupTile key={b.id} button={b} participants={participants?.[b.target_group_dial_code!]}
+                    recording={live.recording.groups.includes(b.target_group_dial_code!)} lineUp={lineUp}
+                    onJoin={() => joinOrLeave(b)} onOpen={() => setOpenGroup(b.target_group_dial_code!, true)} />
+                ))}
+              </div>
+            </>
+          )}
           {groupButtons.length === 0 && <div className="empty">No groups assigned yet.</div>}
         </section>
         {session.buttons.length === 0 && <div className="empty">No buttons assigned yet.</div>}

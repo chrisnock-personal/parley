@@ -346,15 +346,10 @@ canvas). Its 48x48 drawing:
 Each item needs mocking or working through before it's built.
 
 **Client UI (mock first)**
-- **Call timer** on the intercom slot and on joined groups: where it sits on
-  the card, and whether a group shows how long *you've* been in it or how
-  long the group has been live.
-- **Compact cards for groups you haven't joined**, so a long list stays
-  readable: what a collapsed card keeps (name, people, talking, REC) and how
-  it expands.
-- **Keyboard hotkeys** (from Eyevinn): per-group push-to-talk and mute,
-  answer/hang up the intercom, a global mute. Needs a key-assignment UI
-  and a way to show each card's key.
+- **Keyboard hotkeys** (from Eyevinn), if wanted: per-group push-to-talk
+  and mute, answer/hang up the intercom, a global mute. Mainly for desk
+  operators with busy hands, and for foot pedals / Stream Deck, which send
+  key presses. Mocked (design canvas, options H1-H3); not chosen yet.
 - **Input/output device selection** (`setSinkId`, `getUserMedia` device
   ids): per device or per slot (e.g. a group to a speaker, the intercom to
   a headset), and where it lives (profile menu or per card).
