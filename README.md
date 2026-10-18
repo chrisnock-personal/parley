@@ -343,20 +343,50 @@ canvas). Its 48x48 drawing:
 ```
 
 ## Roadmap
-- **More from Eyevinn's open intercom**, not built yet: keyboard hotkeys
-  (per-group PTT/mute, global mute), **program/audio-feed groups**
-  (listen-only, auto-ducked while anyone talks in another group), an
-  **active-speaker** marker on the participant list (needs FreeSWITCH
-  conference member data from pbx-core), **admin remote mute** kept
-  separate from self-mute, input/output **device selection**, saved
-  **presets** (a set of groups to join in one go), and Stream Deck control
-  via Bitfocus Companion.
-- External PBX lines / shared line appearances are **out of scope here**.
-  They belong to Open Turret.
+Each item needs mocking or working through before it's built.
+
+**Client UI (mock first)**
+- **Call timer** on the intercom slot and on joined groups: where it sits on
+  the card, and whether a group shows how long *you've* been in it or how
+  long the group has been live.
+- **Compact cards for groups you haven't joined**, so a long list stays
+  readable: what a collapsed card keeps (name, people, talking, REC) and how
+  it expands.
+- **Keyboard hotkeys** (from Eyevinn): per-group push-to-talk and mute,
+  answer/hang up the intercom, a global mute. Needs a key-assignment UI
+  and a way to show each card's key.
+- **Input/output device selection** (`setSinkId`, `getUserMedia` device
+  ids): per device or per slot (e.g. a group to a speaker, the intercom to
+  a headset), and where it lives (profile menu or per card).
+- Saved **presets** (a set of groups to join in one go), and Stream Deck
+  control via Bitfocus Companion (both from Eyevinn).
+
+**Needs working through**
+- **Admin remote mute**, kept separate from self-mute (Eyevinn's
+  `effectiveMuted = adminMuted || selfMuted`). Today PTT/mute happens only
+  in the browser, on purpose (see CLAUDE.md), so a remote mute needs a
+  server-side path: FreeSWITCH conference control (ESL) or rtpengine
+  blocking the member's media. Also: who may do it, and how the muted
+  person is told.
+- **Program / audio-feed groups**: listen-only feeds that duck while anyone
+  talks in another group. Where the feed comes from (an RTP/SIP source into
+  FreeSWITCH?), and whether ducking is done in the browser (simplest: the
+  client already knows who's talking) or in the mix.
 - **Announce-zone listen-only members** aren't dialled out yet (only
   talkers are).
-- **API keys, WebSocket live session streaming, SIP digest auth** -none
-  built yet.
-- Not yet exercised on a live stack: several groups joined at once
-  alongside a direct call, PTT press/release, and the activity light.
-  (Joining a group from a browser, and from an iPad over HTTPS, is verified.)
+- **API keys** and **WebSocket live session streaming** (instead of the
+  client's 1 s polling).
+
+**To verify on real devices**
+- The iPad's home-screen icon, and its reconnect screen after the SIP realm
+  change.
+- A desk browser to iPad call over HTTPS (the "remote desk" case).
+- Several groups joined at once alongside a direct call, PTT press/release,
+  and the activity light.
+
+**Related projects**
+- Port SIP-REC recording, avatars and live transcription to Open Turret.
+- Port the transcription noise and music filtering (`transcriber/src/vad.ts`,
+  `pitch.ts`, `segmenter.ts`) back to CallRaven.
+- External PBX lines / shared line appearances are **out of scope here**;
+  they belong to Open Turret.

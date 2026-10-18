@@ -58,6 +58,12 @@ export const config = {
     port: parseInt(process.env.PBX_ADMIN_PORT || '9080', 10),
   },
 
+  // The transcriber (host networking, like us) is told the moment a member
+  // joins a group, so it taps their voice straight away instead of on its
+  // next once-a-second poll -anything said before the tap starts is never
+  // transcribed. Empty disables it; the poll still picks the call up.
+  transcriberPokeUrl: process.env.TRANSCRIBER_POKE_URL ?? 'http://127.0.0.1:9081/poke',
+
   // SIP digest auth (RFC 2617/3261) for REGISTER and INVITE -see
   // digestAuth.ts. A deliberate, narrow exception to pbx-core otherwise
   // being database-free (see CLAUDE.md's design decisions): this is a

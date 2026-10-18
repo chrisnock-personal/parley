@@ -187,11 +187,12 @@ input[type=checkbox] { accent-color: var(--accent); }
 
 .card-head, .call-head { display: flex; align-items: center; gap: 12px; }
 .card-title { flex: 1; min-width: 0; }
-/* Name shrinks (ellipsis) so its tags (REC, Transcribed) always stay whole. */
 .card-name { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .card-name-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-name .rec-tag, .card-name .info-tag { margin-left: 0; flex: none; }
-.card-sub { font-size: 12px; color: var(--dim); margin-top: 2px; }
+.card-name .rec-tag, .card-sub .rec-tag, .card-sub .info-tag { margin-left: 0; flex: none; }
+/* The status line also carries the REC / Transcribed tags; it wraps under
+   them on a narrow card rather than squeezing anything. */
+.card-sub { font-size: 12px; color: var(--dim); margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .is-live .card-sub { color: var(--live); }
 .call-idle-icon {
   width: 40px; height: 40px; border-radius: 50%; background: var(--surface-2); color: var(--dim);

@@ -535,13 +535,17 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
         <ActivityLight state={state} />
         <div className="card-title">
           <div className="card-name">
-            <span className="card-name-text">{buttonLabel(button)}</span>
+            <span className="card-name-text" title={buttonLabel(button)}>{buttonLabel(button)}</span>
+          </div>
+          {/* Tags sit on this line, not beside the name: next to the name they
+              squeezed short group names ("Production") down to an ellipsis. */}
+          <div className="card-sub">
             {recording && <RecTag title="Someone in this group is being recorded, so the group's audio is recorded" />}
             {button.target_group_transcribe_enabled && <span className="info-tag" title="Speech in this group is transcribed and kept">Transcribed</span>}
-          </div>
-          <div className="card-sub">
-            {GROUP_PREFIX}{button.target_group_dial_code} · {mode} · {joined ? (live ? 'joined' : state.status) : 'not joined'}
-            {state.onHold ? ' · on hold' : ''}
+            <span>
+              {GROUP_PREFIX}{button.target_group_dial_code} · {mode} · {joined ? (live ? 'joined' : state.status) : 'not joined'}
+              {state.onHold ? ' · on hold' : ''}
+            </span>
           </div>
         </div>
         {people.length > 0

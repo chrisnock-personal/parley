@@ -107,6 +107,7 @@ export function registerGroupIntercom(srf: Srf) {
         callerTag: fromTag, calleeTag: 'fs',
         startedAt: Date.now(),
       });
+      pokeTranscriber();
 
       // Real hold/resume on a group leg (e.g. an intercom client member holding their
       // own line) -see reinvite.ts / intercom.ts's identical wiring.
@@ -120,4 +121,10 @@ export function registerGroupIntercom(srf: Srf) {
       if (!res.finalResponseSent) res.send(status, 'Failed to join conference');
     }
   });
+}
+
+/** Fire-and-forget: a transcriber that's down or slow must never affect the call. */
+function pokeTranscriber() {
+  if (!config.transcriberPokeUrl) return;
+  fetch(config.transcriberPokeUrl, { method: 'POST', signal: AbortSignal.timeout(500) }).catch(() => { /* it polls anyway */ });
 }

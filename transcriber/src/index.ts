@@ -19,7 +19,7 @@ import { MemberTap, Utterance } from './tap';
 import { transcribe } from './whisper';
 import { displayName, insertLine, transcribedGroups } from './db';
 
-interface LiveCall { callId: string; kind: 'direct' | 'group'; from: string; to: string; callerTag: string }
+interface LiveCall { callId: string; kind: 'direct' | 'group'; from: string; to: string; callerTag: string; startedAt: number }
 
 const taps = new Map<string, { tap: MemberTap; call: LiveCall }>();
 const starting = new Set<string>();
@@ -94,7 +94,14 @@ async function tick() {
     const tap = new MemberTap(callId, call.callerTag, (u) => void handleUtterance(call, u));
     starting.add(callId);
     tap.start()
-      .then(() => { taps.set(callId, { tap, call }); console.log(`[tap] ${call.from} in ${call.to}`); })
+      .then(() => {
+        taps.set(callId, { tap, call });
+        console.log(`[tap] ${call.from} in ${call.to}, ${Date.now() - call.startedAt} ms after the call started`);
+        // Anything said before the first packet is lost to transcription.
+        setTimeout(() => {
+          if (tap.firstAudioAt) console.log(`[tap] ${call.from} in ${call.to}: first audio ${tap.firstAudioAt - call.startedAt} ms after the call started`);
+        }, 5000);
+      })
       .catch((err) => {
         console.error(`[tap] ${call.from} in ${call.to} failed (retrying in ${RETRY_MS / 1000}s): ${err.message}`);
         retryAfter.set(callId, Date.now() + RETRY_MS);
@@ -105,7 +112,16 @@ async function tick() {
 }
 
 // GET /talking -> { talking: [{ group, extension }] }: who's speaking now.
+// POST /poke -> 204: re-read pbx-core's call list now.
 createServer((req, res) => {
+  // POST /poke: pbx-core saying a member just joined a group -look now
+  // rather than at the next poll, so their first words are tapped.
+  if (req.method === 'POST' && req.url === '/poke') {
+    void tick();
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   if (req.method === 'GET' && req.url === '/talking') {
     const talking = [...taps.values()]
       .filter(({ tap }) => tap.isTalking(config.talkHoldMs))
