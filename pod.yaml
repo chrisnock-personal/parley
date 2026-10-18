@@ -1,4 +1,4 @@
-# Podman pod for Open Intercom PBX backend (Phase 1).
+# Podman pod for the Parley PBX backend (Phase 1).
 #   podman play kube pod.yaml
 #
 # Two containers share the pod's network namespace, so pbx-core reaches

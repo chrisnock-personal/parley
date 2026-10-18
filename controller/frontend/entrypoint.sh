@@ -49,7 +49,7 @@ distinguished_name = dn
 x509_extensions = ca_ext
 prompt = no
 [dn]
-CN = Open Intercom local CA (${CERT_SAN_IP:-localhost}, $(date +%F))
+CN = Parley local CA (${CERT_SAN_IP:-localhost}, $(date +%F))
 [ca_ext]
 basicConstraints = critical,CA:TRUE,pathlen:0
 keyUsage = critical,keyCertSign,cRLSign

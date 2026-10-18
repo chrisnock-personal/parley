@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  // Favicon and home-screen icons live with the shared logo (brand/).
+  publicDir: '../../brand/public',
   plugins: [react()],
   server: {
     proxy: {

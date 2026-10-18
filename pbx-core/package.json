@@ -1,7 +1,7 @@
 {
   "name": "intercom-pbx-core",
   "version": "0.1.0",
-  "description": "Custom SIP PBX brain for Open Intercom (drachtio + rtpengine)",
+  "description": "Custom SIP PBX brain for Parley (drachtio + rtpengine)",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",

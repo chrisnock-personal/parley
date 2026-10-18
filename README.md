@@ -1,4 +1,6 @@
-# Open Intercom
+<img src="brand/public/icon-512.png" width="72" alt="Parley logo">
+
+# Parley
 
 A container-based IP intercom with **direct** (point-to-point) and **group**
 (open-mic + PTT) calling, a **custom TypeScript PBX core** (drachtio +
@@ -8,9 +10,9 @@ Eyevinn's open intercom), and an admin **controller console** for directory
 users, groups, live status, health, audit, and database backup. Built for a
 **routed / multi-subnet** deployment.
 
-Open Intercom continues **ip-intercom** (`chrisnock-personal/ip-intercom`) in a
-fresh repo, without its git history. It starts from ip-intercom `92ea17a`
-(2026-10-17). Trading-turret features (handsets, speaker, external PBX
+Parley (called Open Intercom until 2026-10-18) continues **ip-intercom**
+(`chrisnock-personal/ip-intercom`) in a fresh repo, without its git
+history. It starts from ip-intercom `92ea17a` (2026-10-17). Trading-turret features (handsets, speaker, external PBX
 lines) live in a sister project, **Open Turret**
 (`chrisnock-personal/open-turret`), forked from ip-intercom the same day.
 
@@ -306,6 +308,35 @@ patches/
   npm run dev` needs `PGHOST`/`PGPORT` etc pointed at a reachable Postgres;
   note `migrate.ts`'s `MIGRATIONS_DIR` assumes the container layout —
   adjust the relative path if running straight from `src/`.
+
+## Brand
+
+The name is **Parley**, and the logo is two voices with their waves meeting
+in the middle. It lives in one place, `brand/`:
+- `brand/mark.ts`: the logo as SVG markup (a full version, and a simpler
+  one used below 28px so the thin waves don't blur together). Both apps
+  import it; its colours come from each app's `--mark-a`/`--mark-b` CSS
+  variables, so it follows the theme.
+- `brand/public/`: `favicon.svg`, `apple-touch-icon.png` (iPad home screen)
+  and `icon-512.png`, copied into both builds as Vite's `publicDir`.
+
+The internal identifiers keep the old name on purpose: the SIP realm
+(`open-intercom`, baked into every stored SIP password hash, so changing it
+means resetting every user's password), the `Call-Info` host, browser
+storage keys, container names and the repo name.
+
+A second logo is kept in reserve, for if the product grows text chat
+alongside voice: a speech bubble with a live level meter (`P5` on the design
+canvas). Its 48x48 drawing:
+
+```svg
+<path d="M12 6 H36 A8 8 0 0 1 44 14 V28 A8 8 0 0 1 36 36 H22 L13 43 V36 H12 A8 8 0 0 1 4 28 V14 A8 8 0 0 1 12 6 Z" fill="#5BC0EB"/>
+<rect x="13.2" y="17" width="3.6" height="8" rx="1.8" fill="#121417"/>
+<rect x="19.2" y="13" width="3.6" height="16" rx="1.8" fill="#121417"/>
+<rect x="25.2" y="15.5" width="3.6" height="11" rx="1.8" fill="#121417"/>
+<rect x="31.2" y="18.5" width="3.6" height="5" rx="1.8" fill="#121417"/>
+<circle cx="38.5" cy="11.5" r="4.5" fill="#4CC38A" stroke="#121417" stroke-width="2.5"/>
+```
 
 ## Roadmap
 - **More from Eyevinn's open intercom**, not built yet: keyboard hotkeys

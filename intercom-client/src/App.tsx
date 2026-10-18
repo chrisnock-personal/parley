@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, createContext, useContext } from 'react';
 import { api, Button, DirectoryEntry, GroupParticipant, IntercomClientSession, LiveState, TranscriptLine } from './api';
 import { createIntercomClientUa, targetUri } from './sipUa';
+import { markSvg, PRODUCT_NAME } from '../../brand/mark';
 import { CallManager, SlotId, SlotState, SlotStates, ICM_SLOT, lineSlot, idleSlot, CallEventPayload } from './calls';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -57,7 +58,7 @@ function LoginScreen({ onLogin, onSubmitGesture }: {
   return (
     <div className="login-screen">
       <form onSubmit={submit} className="login-form">
-        <h1>Intercom Client Login</h1>
+        <h1 className="login-brand"><Mark size={32} /> {PRODUCT_NAME}</h1>
         <label>
           Extension
           <input value={extension} onChange={(e) => setExtension(e.target.value)} autoFocus />
@@ -144,6 +145,11 @@ function Icon({ name, size = 16 }: { name: keyof typeof ICON_PATHS; size?: numbe
       {ICON_PATHS[name].split(' M').map((d, i) => <path key={i} d={i ? `M${d}` : d} />)}
     </svg>
   );
+}
+
+// The product logo, from the shared brand/mark.ts (colours: --mark-a/-b).
+function Mark({ size }: { size: number }) {
+  return <span className="mark" dangerouslySetInnerHTML={{ __html: markSvg(size) }} />;
 }
 
 // People are drawn as initials avatars. Each person keeps one colour (picked
@@ -1034,7 +1040,7 @@ export default function App() {
     <div className="client-shell">
       <div className="client-topbar">
         <div className="topbar-who">
-          <span className="brand"><Icon name="headset" size={20} /> Open Intercom</span>
+          <span className="brand"><Mark size={26} /> {PRODUCT_NAME}</span>
           <ProfileMenu name={session.name} extension={session.extension} lineStatus={lineStatus}
             recorded={live.recording.self} groups={groupButtons.map(buttonLabel)}
             hasPhoto={!!live.avatars[session.extension]} onPhotoChanged={() => setPollTick((t) => t + 1)} />

@@ -1,4 +1,4 @@
-// Open Intercom transcriber: taps every group member's own voice, for two
+// Parley transcriber: taps every group member's own voice, for two
 // things:
 //  * who's talking right now, in every group (GET /talking on TALKING_PORT;
 //    controller-backend merges it into the client's participant lists);

@@ -6,6 +6,10 @@ WORKDIR /app
 COPY controller/frontend/package.json ./
 RUN npm install
 COPY controller/frontend/ .
+# The shared logo (brand/mark.ts, brand/public/ icons), at the same relative
+# path as in the repo (/app/src/../../brand and ../../../brand both land on
+# /brand), so the same relative imports resolve here.
+COPY brand/ /brand/
 RUN npm run build
 
 FROM node:22-bookworm-slim AS intercom-client-build
@@ -13,6 +17,7 @@ WORKDIR /app
 COPY intercom-client/package.json ./
 RUN npm install
 COPY intercom-client/ .
+COPY brand/ /brand/
 RUN npm run build
 
 FROM nginx:1.27-alpine

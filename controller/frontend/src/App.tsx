@@ -3,10 +3,16 @@ import {
   api, Endpoint, Group, GroupMember, SessionUser,
   DirectoryUser, DirectoryUserButton, LiveRegistration, LiveCall,
 } from './api';
+import { markSvg, PRODUCT_NAME } from '../../../brand/mark';
 import HealthPanel from './HealthPanel';
 import AuditPanel from './AuditPanel';
 import DatabasePanel from './DatabasePanel';
 import SettingsPanel from './SettingsPanel';
+
+// The product logo, from the shared brand/mark.ts (colours: --mark-a/-b).
+function Mark({ size }: { size: number }) {
+  return <span className="mark" dangerouslySetInnerHTML={{ __html: markSvg(size) }} />;
+}
 
 // ── Login ──────────────────────────────────────────────────────────────────
 function Login({ onLoggedIn }: { onLoggedIn: (u: SessionUser) => void }) {
@@ -32,7 +38,7 @@ function Login({ onLoggedIn }: { onLoggedIn: (u: SessionUser) => void }) {
   return (
     <div className="login-shell">
       <form className="login-card" onSubmit={submit}>
-        <h1>Intercom Console</h1>
+        <h1 className="login-brand"><Mark size={28} /> {PRODUCT_NAME} Console</h1>
         <div className="sub">Sign in to control endpoints and sessions</div>
         {error && <div className="error-banner">{error}</div>}
         <div className="field">
@@ -612,8 +618,8 @@ export default function App() {
     <div className="app-shell">
       <div className="topbar">
         <div className="brand">
-          <span className="brand-led" />
-          <span className="brand-title">Intercom Console</span>
+          <Mark size={26} />
+          <span className="brand-title">{PRODUCT_NAME} Console</span>
           <span className="brand-sub">groups, directory users &amp; endpoints</span>
         </div>
         <div className="topbar-right">

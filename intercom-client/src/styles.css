@@ -6,6 +6,11 @@
    State colours mean the same thing in both: live = joined/on a call,
    talk = push-to-talk / talking, danger = leave / hang up. */
 
+:root {
+  /* Logo colours (brand/mark.ts): follow each theme's accent and live green. */
+  --mark-a: var(--accent);
+  --mark-b: var(--live);
+}
 :root, :root[data-theme="panel"] {
   --bg: #121417;
   --topbar: #171a1e;
@@ -138,7 +143,8 @@ input[type=checkbox] { accent-color: var(--accent); }
 :root[data-theme="warm"] .client-topbar { border-bottom-color: transparent; }
 .topbar-who { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; color: var(--text); margin-right: 8px; }
-.brand svg { color: var(--accent); }
+.mark { display: inline-flex; flex: none; }
+.login-brand { display: flex; align-items: center; gap: 10px; }
 .client-name { font-weight: 600; }
 .client-ext { font-family: var(--mono); color: var(--dim); }
 .line-status { font-size: 12px; font-family: var(--mono); }

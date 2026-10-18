@@ -6,6 +6,8 @@ import react from '@vitejs/plugin-react';
 // asset URLs resolve correctly.
 export default defineConfig({
   base: '/intercom-client/',
+  // Favicon and home-screen icons live with the shared logo (brand/).
+  publicDir: '../brand/public',
   plugins: [react()],
   server: {
     proxy: {

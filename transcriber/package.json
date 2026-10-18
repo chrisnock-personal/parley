@@ -1,7 +1,7 @@
 {
   "name": "intercom-transcriber",
   "version": "0.1.0",
-  "description": "Live per-group transcription for Open Intercom: taps each member's voice from rtpengine and transcribes it with whisper",
+  "description": "Live per-group transcription for Parley: taps each member's voice from rtpengine and transcribes it with whisper",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",

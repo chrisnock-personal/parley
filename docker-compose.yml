@@ -1,4 +1,4 @@
-# Open Intercom -full stack for podman-compose (or docker-compose).
+# Parley -full stack for podman-compose (or docker-compose).
 #
 #   podman-compose up -d --build
 #
