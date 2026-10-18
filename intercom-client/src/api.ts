@@ -36,6 +36,11 @@ export interface LiveState {
   };
 }
 
+export interface DirectoryEntry {
+  extension: string;
+  name: string;
+}
+
 export interface GroupParticipant {
   extension: string;
   name: string;
@@ -91,6 +96,11 @@ export const api = {
   // A group's live transcript; `after` = last line id seen, for polling.
   groupTranscript(dialCode: string, after?: string): Promise<{ transcribing: boolean; lines: TranscriptLine[] }> {
     return req(`/groups/${encodeURIComponent(dialCode)}/transcript${after ? `?after=${after}` : ''}`);
+  },
+
+  // Everyone you could call (the "All" tab), excluding yourself.
+  directory(): Promise<DirectoryEntry[]> {
+    return req('/directory');
   },
 
   // Profile picture: an already-cropped image (see App.tsx cropToSquare).

@@ -2,7 +2,7 @@
 import express, { Router } from 'express';
 import config from '../config';
 import { requireIntercomClientAuth, signIntercomClientToken } from '../middleware/intercomClientSession';
-import { authenticateDirectoryUser, avatarVersions, getAvatar, getDirectoryUser, listButtons, setAvatar } from '../services/directoryUserService';
+import { authenticateDirectoryUser, avatarVersions, getAvatar, getDirectoryUser, listButtons, listDirectoryUsers, setAvatar } from '../services/directoryUserService';
 import { getSettings } from '../services/settingsService';
 import { audit } from '../services/auditService';
 import { recordIntercomClientCallStart, recordIntercomClientCallEnd } from '../services/pbxService';
@@ -95,6 +95,18 @@ router.get('/groups/participants', requireIntercomClientAuth, async (req, res, n
         groups: [...recordingGroups],
       },
     });
+  } catch (err) { next(err); }
+});
+
+// The intercom directory for the client's "All" tab: every enabled user
+// except yourself, name + extension only (no policy flags). Who's online
+// comes with the 1s poll.
+router.get('/directory', requireIntercomClientAuth, async (req, res, next) => {
+  try {
+    const users = await listDirectoryUsers();
+    res.json(users
+      .filter((u) => u.enabled && u.id !== req.intercomClientUser!.id)
+      .map((u) => ({ extension: u.extension, name: u.name })));
   } catch (err) { next(err); }
 });
 

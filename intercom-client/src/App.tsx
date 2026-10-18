@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, createContext, useContext } from 'react';
-import { api, Button, GroupParticipant, IntercomClientSession, LiveState, TranscriptLine } from './api';
+import { api, Button, DirectoryEntry, GroupParticipant, IntercomClientSession, LiveState, TranscriptLine } from './api';
 import { createIntercomClientUa, targetUri } from './sipUa';
 import { CallManager, SlotId, SlotState, SlotStates, ICM_SLOT, lineSlot, idleSlot, CallEventPayload } from './calls';
 
@@ -135,6 +135,7 @@ const ICON_PATHS: Record<string, string> = {
   mic: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v3',
   micOff: 'M2 2l20 20 M18.89 13.23A7 7 0 0 0 19 12v-2 M5 10v2a7 7 0 0 0 12 5 M15 9.34V5a3 3 0 0 0-5.68-1.33 M9 9v3a3 3 0 0 0 5.12 2.12 M12 19v3',
   headset: 'M3 14v-3a9 9 0 0 1 18 0v3 M21 15a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2z M3 15a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z',
+  search: 'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14 M21 21l-4.3-4.3',
 };
 function Icon({ name, size = 16 }: { name: keyof typeof ICON_PATHS; size?: number }) {
   return (
@@ -200,9 +201,9 @@ function RecTag({ title }: { title: string }) {
 // online and talking, which of your groups they're in, and a Call / Hang up
 // button when you have an intercom key for them. Escape or a click outside
 // closes it.
-function PersonCard({ person, anchor, online, talking, groups, keyButton, onCallWith, onCall, onHangup, onClose }: {
+function PersonCard({ person, anchor, online, talking, groups, keyButton, callable, onCallWith, onCall, onHangup, onClose }: {
   person: { extension: string; name: string }; anchor: DOMRect;
-  online: boolean; talking: boolean; groups: string[]; keyButton: Button | undefined; onCallWith: boolean;
+  online: boolean; talking: boolean; groups: string[]; keyButton: Button | undefined; callable: boolean; onCallWith: boolean;
   onCall: () => void; onHangup: () => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -244,9 +245,10 @@ function PersonCard({ person, anchor, online, talking, groups, keyButton, onCall
       </div>
       {onCallWith
         ? <button className="act-btn danger" onClick={onHangup}>Hang up</button>
-        : keyButton
+        : callable
           ? <button className="person-card-call" disabled={!online} onClick={onCall}>{online ? `Call ${person.name}` : 'Offline -can\'t call'}</button>
-          : <div className="dim person-card-note">No intercom key for this person.</div>}
+          : <div className="dim person-card-note">That's you.</div>}
+      {keyButton && !onCallWith && <div className="dim person-card-note">One of your intercom keys.</div>}
     </div>
   );
 }
@@ -279,18 +281,103 @@ function VolumeRow({ slot, state, actions }: { slot: SlotId; state: SlotState; a
   );
 }
 
+// The "All" tab: everyone in the directory, searchable, online first. Rows
+// call (or hang up) directly; people who are also your assigned keys are
+// tagged. A list rather than tiles, so it still works with hundreds of
+// people.
+function DirectoryPanel({ directory, keys, online, lineUp, activeExt, onCall, onHangup }: {
+  directory: DirectoryEntry[]; keys: Button[]; online: string[]; lineUp: boolean; activeExt: string | null;
+  onCall: (extension: string, name: string) => void; onHangup: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [onlineOnly, setOnlineOnly] = useState(false);
+  const keyExts = new Set(keys.map((b) => b.target_extension));
+  const q = query.trim().toLowerCase();
+  const people = directory
+    .filter((p) => !q || p.name.toLowerCase().includes(q) || p.extension.includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  // The person you're on a call with leads, then online, then offline.
+  const onCallWith = people.filter((p) => p.extension === activeExt);
+  const on = people.filter((p) => p.extension !== activeExt && online.includes(p.extension));
+  const off = onlineOnly ? [] : people.filter((p) => p.extension !== activeExt && !online.includes(p.extension));
+
+  const row = (p: DirectoryEntry) => {
+    const isOnline = online.includes(p.extension);
+    const isActive = p.extension === activeExt;
+    return (
+      <div key={p.extension} className={`dir-row${isActive ? ' active' : ''}${isOnline ? '' : ' offline'}`}>
+        <span className="dir-avatar">
+          <Avatar name={p.name} id={p.extension} size={32} openable />
+          <span className={`dir-presence ${isOnline ? 'online' : 'offline'}`} aria-hidden="true" />
+        </span>
+        <span className="dir-name">
+          <span className="dir-name-text">{p.name}</span>
+          {isActive && <span className="dir-note">· on call with you</span>}
+          {keyExts.has(p.extension) && <span className="info-tag">Your key</span>}
+        </span>
+        <span className="dir-ext">{p.extension}</span>
+        {isActive
+          ? <button className="dir-btn danger" onClick={onHangup}>Hang up</button>
+          : <button className="dir-btn" disabled={!isOnline || !lineUp} onClick={() => onCall(p.extension, p.name)}
+              aria-label={isOnline ? `Call ${p.name}` : `${p.name} is offline`}>{isOnline ? 'Call' : 'Offline'}</button>}
+      </div>
+    );
+  };
+
+  return (
+    <div className="card dir-panel">
+      <div className="dir-tools">
+        <label className="dir-search">
+          <Icon name="search" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or extension" aria-label="Search the directory" />
+        </label>
+        <label className="dir-filter"><input type="checkbox" checked={onlineOnly} onChange={(e) => setOnlineOnly(e.target.checked)} /> Online only</label>
+      </div>
+      <div className="dir-list">
+        {onCallWith.map(row)}
+        {on.length > 0 && <div className="dir-heading">Online · {on.length}</div>}
+        {on.map(row)}
+        {off.length > 0 && <div className="dir-heading">Offline · {off.length}</div>}
+        {off.map(row)}
+        {people.length === 0 && <div className="empty">{q ? 'Nobody matches.' : 'Nobody else in the directory.'}</div>}
+        {people.length > 0 && onCallWith.length + on.length + off.length === 0 && <div className="empty">Nobody online right now.</div>}
+      </div>
+    </div>
+  );
+}
+
+// Which Intercom tab is showing, remembered per device.
+type IcmTab = 'assigned' | 'all';
+const ICM_TAB_KEY = 'open-intercom-icm-tab';
+function loadIcmTab(): IcmTab {
+  try { return localStorage.getItem(ICM_TAB_KEY) === 'all' ? 'all' : 'assigned'; } catch { return 'assigned'; }
+}
+
 // The Intercom section: a call card (who you're on with, mic / hold / hang up,
 // auto-answer, volume) beside the ICM keys as large panel keys. Press a key to
 // call that person; press the live key (or Hang up) to end it.
-function IcmSection({ state, actions, keys, lineUp, recording, online, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress }: {
-  state: SlotState; actions: SlotActions; keys: Button[]; lineUp: boolean; recording: boolean; online: string[];
+function IcmSection({ state, actions, keys, directory, lineUp, recording, online, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress, onCall }: {
+  state: SlotState; actions: SlotActions; keys: Button[]; directory: DirectoryEntry[]; lineUp: boolean; recording: boolean; online: string[];
+  onCall: (extension: string, name: string) => void;
   autoAnswer: boolean; onToggleAutoAnswer: () => void; onHold: () => void; onHangup: () => void; onPress: (b: Button) => void;
 }) {
   const active = state.status !== 'idle';
   const live = state.status === 'connected';
   const activeKey = active ? keys.find((b) => state.counterpart === b.target_extension) : undefined;
-  const who = activeKey ? buttonLabel(activeKey) : state.counterpart;
+  // Calls can now be with anyone in the directory, not only assigned keys.
+  const who = activeKey ? buttonLabel(activeKey)
+    : directory.find((p) => p.extension === state.counterpart)?.name ?? state.counterpart;
+  const [tab, setTab] = useState<IcmTab>(loadIcmTab);
+  const pickTab = (t: IcmTab) => { setTab(t); try { localStorage.setItem(ICM_TAB_KEY, t); } catch { /* not remembered */ } };
   return (
+    <>
+    <div className="section-head">
+      <h2>Intercom</h2>
+      <div className="seg-tabs" role="tablist" aria-label="Intercom keys">
+        <button role="tab" aria-selected={tab === 'assigned'} className={tab === 'assigned' ? 'on' : ''} onClick={() => pickTab('assigned')}>Assigned · {keys.length}</button>
+        <button role="tab" aria-selected={tab === 'all'} className={tab === 'all' ? 'on' : ''} onClick={() => pickTab('all')}>All · {directory.length}</button>
+      </div>
+    </div>
     <div className="icm-row">
       <div className={`card call-card${live ? ' is-live' : active ? ' is-pending' : ''}${state.onHold ? ' is-held' : ''}`}>
         <div className="call-head">
@@ -327,6 +414,10 @@ function IcmSection({ state, actions, keys, lineUp, recording, online, autoAnswe
         </label>
       </div>
 
+      {tab === 'all'
+        ? <DirectoryPanel directory={directory} keys={keys} online={online} lineUp={lineUp}
+            activeExt={active ? state.counterpart : null} onCall={onCall} onHangup={onHangup} />
+        : (
       <div className="key-grid">
         {keys.map((b) => {
           const isActive = !!activeKey && activeKey.id === b.id;
@@ -348,7 +439,9 @@ function IcmSection({ state, actions, keys, lineUp, recording, online, autoAnswe
         })}
         {keys.length === 0 && <div className="empty">No intercom keys assigned.</div>}
       </div>
+        )}
     </div>
+    </>
   );
 }
 
@@ -663,6 +756,7 @@ export default function App() {
   const [live, setLive] = useState<Pick<LiveState, 'online' | 'recording' | 'avatars'>>({ online: [], recording: { self: false, icm: false, groups: [] }, avatars: {} });
   const [pollTick, setPollTick] = useState(0); // bump to poll right away (e.g. after changing your photo)
   const [card, setCard] = useState<{ person: { extension: string; name: string }; anchor: DOMRect } | null>(null);
+  const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
   const openPerson = useCallback<OpenPerson>((person, el) => setCard({ person, anchor: el.getBoundingClientRect() }), []);
   const closeCard = useCallback(() => setCard(null), []);
   // Why the last WebSocket attempt failed, shown in the badge. 1006 with no
@@ -824,20 +918,33 @@ export default function App() {
   // call already up there. Matched by counterpart identity, not display
   // label: an incoming call's label comes from the SIP URI, which won't
   // equal a button's custom label -counterpart is what both sides agree on.
-  const handleDirectPress = useCallback((b: Button) => {
+  // Direct call to an extension on the ICM slot, or hang up if it's the call
+  // already up there. Used by ICM keys, the All tab and the person card.
+  const callExtension = useCallback((extension: string, label: string) => {
     const ua = uaRef.current;
     if (!ua || !sessionRef.current) return;
     const icm = managerRef.current.getState(ICM_SLOT);
-    if (icm.status !== 'idle' && icm.counterpart === b.target_extension) {
+    if (icm.status !== 'idle' && icm.counterpart === extension) {
       managerRef.current.hangup(ICM_SLOT);
       return;
     }
     // Direct calls never start muted -PTT is a group/hoot concept, not a
     // private 2-party line.
-    managerRef.current.dial(ua, ICM_SLOT, targetUri(b.target_extension!), buttonLabel(b), {
-      kind: 'direct', direction: 'outgoing', counterpartExtension: b.target_extension!,
+    managerRef.current.dial(ua, ICM_SLOT, targetUri(extension), label, {
+      kind: 'direct', direction: 'outgoing', counterpartExtension: extension,
     });
   }, []);
+  const handleDirectPress = useCallback((b: Button) => callExtension(b.target_extension!, buttonLabel(b)), [callExtension]);
+
+  // The directory for the All tab: at sign-in, then every minute (people
+  // get added or renamed rarely; who's online comes with the 1s poll).
+  useEffect(() => {
+    if (!session) return;
+    const load = () => api.directory().then(setDirectory).catch(() => { /* keep the last list */ });
+    load();
+    const t = window.setInterval(load, 60_000);
+    return () => window.clearInterval(t);
+  }, [session]);
 
   // Group line: join or leave. Each line has its own slot, so joining one
   // never disturbs another. A group's PTT default seeds the initial talk state.
@@ -909,12 +1016,13 @@ export default function App() {
     const inGroups = groupButtons.filter((b) => (participants?.[b.target_group_dial_code!] ?? []).some((p) => p.extension === ext));
     const talking = inGroups.some((b) => participants?.[b.target_group_dial_code!]?.some((p) => p.extension === ext && p.talking));
     const keyButton = directButtons.find((b) => b.target_extension === ext);
+    const inDirectory = directory.some((p) => p.extension === ext);
     const onCallWith = icm.status !== 'idle' && icm.counterpart === ext;
     personCard = (
       <PersonCard person={card.person} anchor={card.anchor}
         online={live.online.includes(ext)} talking={talking} groups={inGroups.map(buttonLabel)}
-        keyButton={keyButton} onCallWith={onCallWith}
-        onCall={() => { if (keyButton) handleDirectPress(keyButton); setCard(null); }}
+        keyButton={keyButton} callable={!!keyButton || inDirectory} onCallWith={onCallWith}
+        onCall={() => { callExtension(ext, keyButton ? buttonLabel(keyButton) : card.person.name); setCard(null); }}
         onHangup={() => { managerRef.current.hangup(ICM_SLOT); setCard(null); }}
         onClose={closeCard} />
     );
@@ -974,11 +1082,11 @@ export default function App() {
             separate sections -but each is a grid of cards, so the Intercom
             card stays card-sized instead of spanning the page. */}
         <section className="client-section">
-          <h2>Intercom</h2>
           <IcmSection
               state={icm}
               actions={actions}
               keys={directButtons}
+              directory={directory}
               lineUp={lineUp}
               recording={live.recording.icm}
               online={live.online}
@@ -987,6 +1095,7 @@ export default function App() {
               onHold={() => managerRef.current.setHold(ICM_SLOT, !icm.onHold)}
               onHangup={() => managerRef.current.hangup(ICM_SLOT)}
               onPress={handleDirectPress}
+              onCall={callExtension}
             />
         </section>
 
