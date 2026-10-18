@@ -54,15 +54,35 @@ export function toWav(pcm: Int16Array): Buffer {
   return Buffer.concat([hdr, data]);
 }
 
-// What whisper writes for no speech, which isn't speech (ported from
-// CallRaven's liveTranscribe.js): its markers ([BLANK_AUDIO], [MUSIC]), a
-// segment that's only its prompt's words (it echoes the prompt over
-// near-silence), or a lone "you".
+// What whisper writes for no speech, which isn't speech (extended from
+// CallRaven's liveTranscribe.js): its markers in any case ([BLANK_AUDIO],
+// [Music], (applause), *laughs*, music notes), a segment that's only its
+// prompt's words (it echoes the prompt over near-silence), a lone "you",
+// and repetition loops ("No points. No points. No points." -whisper's
+// signature failure on poor audio).
 export function cleanWhisperText(text: string, prompt: string): string {
-  const t = String(text || '').replace(/\[[A-Z][A-Z _]*\]/g, ' ').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const t = String(text || '')
+    .replace(/\[[^\]]*\]/g, ' ').replace(/\([^)]*\)/g, ' ').replace(/\*[^*]*\*/g, ' ').replace(/[♪♫]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
   const words = t.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(' ').filter(Boolean);
   if (!words.length) return '';
   const promptWords = new Set(prompt.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(' ').filter(Boolean));
   if (words.every((w) => promptWords.has(w) || w === 'you')) return '';
+  if (isRepetitionLoop(words)) return '';
   return t;
+}
+
+// A 2-4 word phrase three or more times in a row, or one word four or more
+// times. A single word three times is real talkback ("go go go").
+function isRepetitionLoop(words: string[]): boolean {
+  for (let n = 1; n <= 4; n++) {
+    const times = n === 1 ? 4 : 3;
+    for (let i = 0; i + times * n <= words.length; i++) {
+      const a = words.slice(i, i + n).join(' ');
+      let all = true;
+      for (let k = 1; k < times && all; k++) all = words.slice(i + k * n, i + (k + 1) * n).join(' ') === a;
+      if (all) return true;
+    }
+  }
+  return false;
 }

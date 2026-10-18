@@ -187,6 +187,18 @@ export async function addButton(
   if (button_type === 'direct' && !target_extension) throw createError('target_extension is required for a direct button', 400);
   if (button_type === 'group' && !target_group_id) throw createError('target_group_id is required for a group button', 400);
 
+  // One button per target: a second one for the same person or group just
+  // showed up as a duplicate card in the intercom client (both driving the
+  // same call), so refuse it.
+  const dup = await queryOne<{ id: string }>(
+    `SELECT id FROM intercom_directory_user_buttons
+      WHERE directory_user_id = $1 AND button_type = $2
+        AND (target_extension = $3 OR target_group_id = $4)`,
+    [directoryUserId, button_type,
+      button_type === 'direct' ? target_extension : null,
+      button_type === 'group' ? target_group_id : null]);
+  if (dup) throw createError('This user already has a button for that target', 409);
+
   const b = await queryOne<{ id: string }>(
     `INSERT INTO intercom_directory_user_buttons
        (directory_user_id, button_type, target_extension, target_group_id, label, sort_order)

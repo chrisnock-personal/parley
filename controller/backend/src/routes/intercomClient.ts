@@ -43,12 +43,13 @@ router.get('/me', requireIntercomClientAuth, async (req, res, next) => {
 });
 
 // Who is in each of this user's groups right now, Eyevinn-style, so a
-// group's strip can list its participants whether or not you've joined it.
+// group's card can list its participants whether or not you've joined it.
 // Comes straight from pbx-core's in-memory call list (each group call is
 // one member's leg into the FreeSWITCH conference), enriched with names by
-// getLiveStatus(). Only groups this user has a button for are returned.
-// Polled by the client every few seconds; pbx-core being unreachable is a
-// 502 the client just skips, never an error dialog.
+// getLiveStatus(), plus who's talking from the transcriber (best-effort:
+// unreachable means nobody shows as talking). Only groups this user has a
+// button for are returned. Polled by the client every second; pbx-core
+// being unreachable is a 502 the client just skips, never an error dialog.
 router.get('/groups/participants', requireIntercomClientAuth, async (req, res, next) => {
   try {
     const buttons = await listButtons(req.intercomClientUser!.id);
@@ -57,10 +58,18 @@ router.get('/groups/participants', requireIntercomClientAuth, async (req, res, n
     let live;
     try { live = await getLiveStatus(); }
     catch { return res.status(502).json({ error: 'pbx-core unreachable' }); }
-    const participants: Record<string, { extension: string; name: string }[]> = {};
+    const talking = new Set<string>();
+    try {
+      const r = await fetch(`${config.transcriberUrl}/talking`, { signal: AbortSignal.timeout(500) });
+      const body = await r.json() as { talking: { group: string; extension: string }[] };
+      for (const t of body.talking) talking.add(`${t.group}/${t.extension}`);
+    } catch { /* transcriber down: nobody shows as talking */ }
+    const participants: Record<string, { extension: string; name: string; talking: boolean }[]> = {};
     for (const code of mine) participants[code] = [];
     for (const c of live.calls) {
-      if (c.kind === 'group' && mine.has(c.to)) participants[c.to].push({ extension: c.from, name: c.fromName });
+      if (c.kind === 'group' && mine.has(c.to)) {
+        participants[c.to].push({ extension: c.from, name: c.fromName, talking: talking.has(`${c.to}/${c.from}`) });
+      }
     }
     res.json({ participants });
   } catch (err) { next(err); }

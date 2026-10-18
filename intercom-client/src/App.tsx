@@ -149,7 +149,12 @@ function Icon({ name, size = 16 }: { name: keyof typeof ICON_PATHS; size?: numbe
 // from the theme's avatar palette by a hash of their extension), so the same
 // person looks the same in every card.
 function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
+  const trimmed = name.trim();
+  // A trailing number tells people apart ("TestUser1"/"TestUser2" -> T1/T2,
+  // "Camera 2" -> C2): plain first letters made them identical.
+  const num = trimmed.match(/(\d+)$/);
+  if (num && trimmed.length > num[1].length) return (trimmed[0] + num[1]).slice(0, 3).toUpperCase();
+  const words = trimmed.split(/\s+/).filter(Boolean);
   if (!words.length) return '?';
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
   return (words[0][0] + words[words.length - 1][0]).toUpperCase();
@@ -159,9 +164,9 @@ function avatarTone(key: string): number {
   for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return h % 6;
 }
-function Avatar({ name, id, size = 28 }: { name: string; id: string; size?: number }) {
+function Avatar({ name, id, size = 28, talking = false }: { name: string; id: string; size?: number; talking?: boolean }) {
   return (
-    <span className={`avatar tone-${avatarTone(id)}`} style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }} aria-hidden="true">
+    <span className={`avatar tone-${avatarTone(id)}${talking ? ' talking' : ''}`} style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }} aria-hidden="true">
       {initials(name)}
     </span>
   );
@@ -328,7 +333,9 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
     setPttHeld(false);
     actions.setMuted(slot, true);
   };
-  const people = participants ?? [];
+  // Talkers first, so they stay visible when the stack is cut off at STACK_MAX.
+  const people = [...(participants ?? [])].sort((x, y) => Number(y.talking) - Number(x.talking));
+  const talkers = people.filter((p) => p.talking).map((p) => p.name);
   const mode = button.target_group_ptt_default ? 'PTT' : 'open mic';
 
   return (
@@ -344,8 +351,9 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
         </div>
         {people.length > 0
           ? (
-            <span className="avatar-stack" title={people.map((p) => p.name).join(', ')} aria-label={`${people.length} in group`}>
-              {people.slice(0, STACK_MAX).map((p) => <Avatar key={p.extension} name={p.name} id={p.extension} />)}
+            <span className="avatar-stack" title={people.map((p) => p.name + (p.talking ? ' (talking)' : '')).join(', ')}
+              aria-label={`${people.length} in group${talkers.length ? `, talking: ${talkers.join(', ')}` : ''}`}>
+              {people.slice(0, STACK_MAX).map((p) => <Avatar key={p.extension} name={p.name} id={p.extension} talking={p.talking} />)}
               {people.length > STACK_MAX && <span className="avatar more">+{people.length - STACK_MAX}</span>}
             </span>
           )
@@ -387,10 +395,10 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, onT
           {people.length === 0
             ? <div className="participants-empty">Nobody in this group</div>
             : people.map((p) => (
-              <div key={p.extension} className={`person-row${p.extension === selfExt ? ' self' : ''}`}>
-                <Avatar name={p.name} id={p.extension} size={26} />
+              <div key={p.extension} className={`person-row${p.extension === selfExt ? ' self' : ''}${p.talking ? ' talking' : ''}`}>
+                <Avatar name={p.name} id={p.extension} size={26} talking={p.talking} />
                 <span className="person-name">{p.name}{p.extension === selfExt ? ' (you)' : ''}</span>
-                <span className="person-ext">{p.extension}</span>
+                <span className="person-ext">{p.talking ? 'talking' : p.extension}</span>
               </div>
             ))}
         </Section>
@@ -501,9 +509,10 @@ export default function App() {
 
   useEffect(() => managerRef.current.onChange(setSlotStates), []);
 
-  // 3s is quick enough to feel live for joins/leaves and cheap for the
-  // backend (one pbx-core status fetch plus two small queries). A failed poll
-  // (pbx-core briefly down) keeps the last list rather than blanking it.
+  // Every second: quick enough for the who's-talking rings to feel live, and
+  // cheap for the backend (one pbx-core status fetch, one transcriber fetch,
+  // two small queries). A failed poll (pbx-core briefly down) keeps the last
+  // list rather than blanking it.
   useEffect(() => {
     if (!session || needsSipPassword) return;
     let stopped = false;
@@ -511,7 +520,7 @@ export default function App() {
       .then((r) => { if (!stopped) setParticipants(r.participants); })
       .catch(() => { /* keep last known */ });
     poll();
-    const t = window.setInterval(poll, 3000);
+    const t = window.setInterval(poll, 1000);
     return () => { stopped = true; window.clearInterval(t); };
   }, [session, needsSipPassword]);
 
@@ -693,8 +702,13 @@ export default function App() {
 
   const icm = slotStates[ICM_SLOT] ?? idleSlot();
   const lineUp = lineStatus === 'registered';
-  const directButtons = session.buttons.filter((b) => b.button_type === 'direct');
-  const groupButtons = session.buttons.filter((b) => b.button_type === 'group');
+  // One key/card per target: duplicate buttons (possible in older data; the
+  // backend now refuses new ones) would otherwise draw twin cards driving
+  // the same call.
+  const firstPerTarget = (bs: Button[], key: (b: Button) => string | null) =>
+    bs.filter((b, i) => bs.findIndex((x) => key(x) === key(b)) === i);
+  const directButtons = firstPerTarget(session.buttons.filter((b) => b.button_type === 'direct'), (b) => b.target_extension);
+  const groupButtons = firstPerTarget(session.buttons.filter((b) => b.button_type === 'group'), (b) => b.target_group_dial_code);
   const actions: SlotActions = {
     setMuted: (slot, m) => managerRef.current.setMuted(slot, m),
     setListenMuted: (slot, v) => managerRef.current.setListenMuted(slot, v),

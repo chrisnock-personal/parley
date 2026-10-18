@@ -18,13 +18,25 @@ import Client from 'rtpengine-client';
 import { config } from './config';
 import { g711To16k, rms, SAMPLE_RATE } from './audio';
 import { G722Decoder } from './g722';
+import { isSpeechFrame } from './vad';
 
 const ng = new (Client as any).Client();
 
 const FRAME_MS = 20;
 const FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS / 1000;
-const SPEECH_FRAME_RMS = 400;   // a 20 ms frame louder than this counts as speech
-const PREROLL_FRAMES = 15;      // keep 300 ms before speech starts, so first syllables aren't clipped
+// Speech is decided per frame by vad.ts (loud AND speech-shaped spectrum),
+// then smoothed: speaking = at least SPEECH_MIN of the last SPEECH_WINDOW
+// frames were speech. That drives who's-talking, and STARTS a transcript
+// segment, so room noise neither lights the talking ring nor reaches
+// whisper. Once started, a segment CONTINUES while there is sound (RMS above
+// SOUND_RMS) and ends on pauseMs of real quiet: the VAD alone flags only
+// ~40% of frames inside speech (consonants, breaths), so ending on it cut
+// sentences apart and lost words between pieces.
+const SPEECH_WINDOW = 15;      // 300 ms
+const SPEECH_MIN = 5;
+const SOUND_RMS = 250;
+const PREROLL_FRAMES = 15;     // keep 300 ms before speech starts, so first syllables aren't clipped
+const SPLIT_SEARCH_FRAMES = 75; // a segment cut at maxSegmentMs ends at the quietest frame in its last 1.5 s
 
 type Codec = { pt: number; kind: 'opus' | 'g722' | 'pcmu' | 'pcma'; rtpmap: string };
 
@@ -50,6 +62,8 @@ export class MemberTap {
   private frames: Int16Array[] = [];   // current segment (incl. pre-roll)
   private pending = new Int16Array(0); // samples not yet making up a whole frame
   private speechFrames = 0;
+  private lastSpeechAt = 0; // wall clock of the last speech frame -drives the talking indicator
+  private recent: boolean[] = []; // last SPEECH_WINDOW per-frame VAD results
   private quietFrames = 0;
   private segmentStart: Date | null = null;
   private stopped = false;
@@ -129,41 +143,67 @@ export class MemberTap {
   }
 
   private frame(f: Int16Array) {
-    const speech = rms(f) > SPEECH_FRAME_RMS;
+    this.recent.push(isSpeechFrame(f));
+    if (this.recent.length > SPEECH_WINDOW) this.recent.shift();
+    const speech = this.recent.filter(Boolean).length >= SPEECH_MIN;
+    if (speech) this.lastSpeechAt = Date.now();
     this.frames.push(f);
-    if (speech) {
-      if (!this.speechFrames) this.segmentStart = new Date(Date.now() - (this.frames.length - 1) * FRAME_MS);
-      this.speechFrames++;
-      this.quietFrames = 0;
-    } else if (this.speechFrames) {
-      this.quietFrames++;
-    }
 
     if (!this.speechFrames) {
-      // No speech yet: keep only the pre-roll.
-      if (this.frames.length > PREROLL_FRAMES) this.frames.shift();
-      return;
+      if (!speech) {
+        // Not in a segment: keep only the pre-roll.
+        if (this.frames.length > PREROLL_FRAMES) this.frames.shift();
+        return;
+      }
+      this.segmentStart = new Date(Date.now() - (this.frames.length - 1) * FRAME_MS);
     }
-    const total = this.frames.length * FRAME_MS;
-    if (this.quietFrames * FRAME_MS >= config.pauseMs || total >= config.maxSegmentMs) this.flush();
+    if (speech) this.speechFrames++;
+    this.quietFrames = speech || rms(f) > SOUND_RMS ? 0 : this.quietFrames + 1;
+
+    if (this.quietFrames * FRAME_MS >= config.pauseMs) this.flush(this.frames.length);
+    else if (this.frames.length * FRAME_MS >= config.maxSegmentMs) this.flush(this.splitPoint());
   }
 
-  private flush() {
-    if (this.speechFrames >= 10) { // at least 200 ms of speech, or it's a click
-      const pcm = new Int16Array(this.frames.length * FRAME_SAMPLES);
-      this.frames.forEach((f, k) => pcm.set(f, k * FRAME_SAMPLES));
+  // Where to cut a segment that hit maxSegmentMs: the quietest frame in its
+  // last 1.5 s, so a word in progress isn't cut in half (ported from
+  // CallRaven's liveTranscribe.js findSplitPoint). Frames after it carry
+  // into the next segment.
+  private splitPoint(): number {
+    let best = this.frames.length, bestEnergy = Infinity;
+    for (let k = Math.max(1, this.frames.length - SPLIT_SEARCH_FRAMES); k < this.frames.length; k++) {
+      const e = rms(this.frames[k]);
+      if (e < bestEnergy) { bestEnergy = e; best = k + 1; }
+    }
+    return best;
+  }
+
+  /** Send frames[0..cut) as an utterance; anything after `cut` starts the
+   * next segment (carried over by a max-length split). */
+  private flush(cut: number) {
+    const sent = this.frames.slice(0, cut);
+    const carry = this.frames.slice(cut);
+    if (this.speechFrames >= 25) { // at least 500 ms of speech: shorter bursts are clicks, coughs, or fragments whisper garbles
+      const pcm = new Int16Array(sent.length * FRAME_SAMPLES);
+      sent.forEach((f, k) => pcm.set(f, k * FRAME_SAMPLES));
       this.onUtterance({ pcm, spokenAt: this.segmentStart ?? new Date() });
     }
-    this.frames = [];
-    this.speechFrames = 0;
+    this.frames = carry;
+    this.speechFrames = carry.length ? 1 : 0; // a carried-over tail is mid-speech by construction
     this.quietFrames = 0;
-    this.segmentStart = null;
+    this.segmentStart = carry.length ? new Date(Date.now() - carry.length * FRAME_MS) : null;
+  }
+
+  /** Speaking now, or within the last `holdMs` (bridges the gaps between
+   * words so the indicator doesn't flicker). Muted PTT members send silence,
+   * so they never show as talking. */
+  isTalking(holdMs: number): boolean {
+    return !this.stopped && Date.now() - this.lastSpeechAt < holdMs;
   }
 
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
-    if (this.speechFrames) this.flush();
+    if (this.speechFrames) this.flush(this.frames.length);
     this.sock.close();
     if (this.toTag) {
       try {

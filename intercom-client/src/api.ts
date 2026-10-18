@@ -27,6 +27,7 @@ export interface TranscriptLine {
 export interface GroupParticipant {
   extension: string;
   name: string;
+  talking: boolean; // speaking right now (transcriber's per-member voice tap)
 }
 
 export interface IntercomClientSession {

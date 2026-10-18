@@ -14,12 +14,27 @@ export const config = {
   // Shared whisper.cpp whisper-server (on this lab host: CallNest's
   // callnest-whisper, 127.0.0.1:8090 -never start a second one).
   whisperUrl: process.env.WHISPER_URL || 'http://127.0.0.1:8090',
-  // Biases whisper's vocabulary; also used to drop prompt echoes.
-  prompt: process.env.TRANSCRIPT_PROMPT || 'Intercom talkback between a broadcast production crew.',
-  pollMs: parseInt(process.env.POLL_MS || '2000', 10),
+  // Optional vocabulary hint for whisper. Off by default: on noisy audio a
+  // prompt gets echoed back as invented text and hides whisper's no-speech
+  // signal (see whisper.ts).
+  prompt: process.env.TRANSCRIPT_PROMPT || '',
+  // Set to a directory to keep every sent segment's audio + whisper's
+  // verdict there (see whisper.ts debugDump). Off by default.
+  debugDir: process.env.TRANSCRIPT_DEBUG_DIR || '',
+  // With debugDir: only dump this extension's segments (a test user), so
+  // nobody else's voice is kept.
+  debugExt: process.env.TRANSCRIPT_DEBUG_EXT || '',
+  pollMs: parseInt(process.env.POLL_MS || '1000', 10),
+  // Who's-talking endpoint (GET /talking), polled by controller-backend for
+  // the client's participant lists. Host network, so 0.0.0.0 like pbx-core's
+  // admin port: controller-backend (bridged) reaches it at the host LAN IP.
+  talkingPort: parseInt(process.env.TALKING_PORT || '9081', 10),
+  // How long someone still counts as talking after their last speech frame:
+  // bridges the gaps between words so the indicator doesn't flicker.
+  talkHoldMs: parseInt(process.env.TALK_HOLD_MS || '700', 10),
   // A segment ends at a pause of this length after speech, or at the max.
-  pauseMs: parseInt(process.env.TRANSCRIPT_PAUSE_MS || '700', 10),
-  maxSegmentMs: parseInt(process.env.TRANSCRIPT_MAX_SEGMENT_MS || '8000', 10),
+  pauseMs: parseInt(process.env.TRANSCRIPT_PAUSE_MS || '900', 10),
+  maxSegmentMs: parseInt(process.env.TRANSCRIPT_MAX_SEGMENT_MS || '12000', 10),
   db: {
     host: process.env.PGHOST || '127.0.0.1',
     port: parseInt(process.env.PGPORT || '5432', 10),

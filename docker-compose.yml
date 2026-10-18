@@ -88,6 +88,8 @@ services:
       # that resolves to 169.254.1.2, which doesn't reach host-network
       # services (timed out on 9080, confirmed 2026-10-17).
       PBX_BASE_URL:     "http://${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}:9080"
+      # The transcriber's who's-talking endpoint (host network, like pbx-core).
+      TRANSCRIBER_URL:  "http://${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}:9081"
       # System Health page's log viewer (routes/system.ts) talks to this
       # over HTTP to fetch other containers' logs. SECURITY NOTE: this gives
       # controller-backend control-plane visibility into EVERY container on
@@ -243,6 +245,11 @@ services:
       RTPENGINE_PORT: "22222"
       MEDIA_IP:       ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
       WHISPER_URL:    ${WHISPER_URL:-http://127.0.0.1:8090}
+      TALKING_PORT:   "9081"   # GET /talking -who's speaking now, for controller-backend
+      # Set to keep every segment sent to whisper (WAV + verdict) under that
+      # path inside the container, for tracing odd transcript lines.
+      TRANSCRIPT_DEBUG_DIR: ${TRANSCRIPT_DEBUG_DIR:-}
+      TRANSCRIPT_DEBUG_EXT: ${TRANSCRIPT_DEBUG_EXT:-}   # limit the dump to one (test) extension
       PGHOST:     "127.0.0.1"
       PGPORT:     "5433"
       PGDATABASE: ${PGDATABASE:-intercom}

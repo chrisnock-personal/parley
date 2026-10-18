@@ -22,6 +22,10 @@ const config = {
   // to the host's LAN IP since pbx-core runs network_mode: host.
   pbxBaseUrl: process.env.PBX_BASE_URL || 'http://127.0.0.1:9080',
 
+  // The transcriber's who's-talking endpoint (transcriber/src/index.ts
+  // GET /talking) -merged into the intercom client's participant lists.
+  transcriberUrl: process.env.TRANSCRIBER_URL || 'http://127.0.0.1:9081',
+
   // Endpoint health polling (hits each endpoint's container-sip-endpoint /api/status)
   healthInterval:      parseInt(process.env.HEALTH_INTERVAL_MS || '30000', 10),
   healthLogRetentionDays: parseInt(process.env.HEALTH_LOG_RETENTION_DAYS || '90', 10),

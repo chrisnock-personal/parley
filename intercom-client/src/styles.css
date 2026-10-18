@@ -208,6 +208,11 @@ input[type=checkbox] { accent-color: var(--accent); }
 .avatar-stack .avatar { border: 2px solid var(--surface); }
 .avatar-stack .avatar + .avatar { margin-left: -9px; }
 .nobody { font-size: 12px; color: var(--dim); white-space: nowrap; }
+/* Who's talking: an amber ring (the same "talk" colour as Push To Talk). */
+.avatar.talking { box-shadow: 0 0 0 2px var(--talk), 0 0 10px var(--talk); }
+.avatar-stack .avatar.talking { border-color: var(--talk); position: relative; z-index: 1; }
+.person-row.talking { border-color: var(--talk); }
+.person-row.talking .person-ext { color: var(--talk); font-weight: 600; }
 
 .card-volume { display: flex; align-items: center; gap: 10px; color: var(--accent); }
 .card-volume input[type=range] { flex: 1; padding: 0; accent-color: var(--accent); }
