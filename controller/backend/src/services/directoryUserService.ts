@@ -43,6 +43,7 @@ export interface DirectoryUserButton {
   target_name: string | null; // direct buttons: the target directory user's name, for the key label
   label: string | null;
   sort_order: number;
+  favourite: boolean; // group buttons: always shown as a full card in the client (migration 015)
 }
 
 const PUBLIC_COLUMNS = 'id, name, extension, enabled, siprec_enabled, created_at, updated_at';
@@ -172,7 +173,7 @@ export async function listButtons(directoryUserId: string): Promise<DirectoryUse
             g.ptt_default AS target_group_ptt_default,
             g.transcribe_enabled AS target_group_transcribe_enabled,
             t.name AS target_name,
-            b.label, b.sort_order
+            b.label, b.sort_order, b.favourite
      FROM intercom_directory_user_buttons b
      LEFT JOIN intercom_groups g ON g.id = b.target_group_id
      LEFT JOIN intercom_directory_users t ON b.button_type = 'direct' AND t.extension = b.target_extension
@@ -221,6 +222,15 @@ export async function addButton(
   if (!b) throw createError('Failed to create button', 500);
   const all = await listButtons(directoryUserId);
   return all.find((x) => x.id === b.id)!;
+}
+
+/** The user's own star on one of their group buttons. */
+export async function setButtonFavourite(directoryUserId: string, buttonId: string, favourite: boolean): Promise<void> {
+  const result = await query(
+    `UPDATE intercom_directory_user_buttons SET favourite = $3
+      WHERE id = $1 AND directory_user_id = $2 AND button_type = 'group'`,
+    [buttonId, directoryUserId, favourite]);
+  if (result.rowCount === 0) throw createError('Group button not found', 404);
 }
 
 export async function removeButton(directoryUserId: string, buttonId: string): Promise<void> {

@@ -161,6 +161,21 @@ function Icon({ name, size = 16 }: { name: keyof typeof ICON_PATHS; size?: numbe
   );
 }
 
+// The favourite toggle on a group's card and tile. Filled in the accent
+// colour when on (amber already means talking).
+function StarButton({ name, on, onToggle }: { name: string; on: boolean; onToggle: () => void }) {
+  return (
+    <button className={`star-btn${on ? ' on' : ''}`} onClick={onToggle} aria-pressed={on}
+      aria-label={on ? `Remove ${name} from favourites` : `Add ${name} to favourites`}
+      title={on ? 'Favourite: always shown in full' : 'Favourite: keep this group shown in full'}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill={on ? 'currentColor' : 'none'} stroke="currentColor"
+        strokeWidth={1.8} strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 3.2l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 17.1 6.6 20l1-6.1-4.4-4.3 6.1-.9z" />
+      </svg>
+    </button>
+  );
+}
+
 // The product logo, from the shared brand/mark.ts (colours: --mark-a/-b).
 function Mark({ size }: { size: number }) {
   return <span className="mark" dangerouslySetInnerHTML={{ __html: markSvg(size) }} />;
@@ -526,9 +541,10 @@ function TranscriptPanel({ dialCode, selfExt }: { dialCode: string; selfExt: str
 // To Talk. Then collapsible Participants and (for transcribed groups)
 // Transcript, and Join / Leave at the bottom.
 const STACK_MAX = 4;
-function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, onToggleJoin, onCollapse }: {
+function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, onToggleJoin, onToggleFavourite, onCollapse }: {
   button: Button; state: SlotState; actions: SlotActions; lineUp: boolean; recording: boolean;
   participants: GroupParticipant[] | undefined; selfExt: string; onToggleJoin: () => void;
+  onToggleFavourite: () => void;
   onCollapse?: () => void; // an unjoined group opened from its tile: shrink it back
 }) {
   const slot = lineSlot(button.target_group_dial_code!);
@@ -579,6 +595,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
             <Icon name="chevron" />
           </button>
         )}
+        <StarButton name={buttonLabel(button)} on={button.favourite} onToggle={onToggleFavourite} />
       </div>
 
       {joined && <VolumeRow slot={slot} state={state} actions={actions} />}
@@ -641,15 +658,16 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
 // A group you haven't joined, as a small tile: who's in it, whether anyone
 // is talking, its tags, and Join. Clicking the tile (not Join) opens the
 // full card, for its participants and transcript.
-function GroupTile({ button, participants, recording, lineUp, onJoin, onOpen }: {
+function GroupTile({ button, participants, recording, lineUp, onJoin, onOpen, onToggleFavourite }: {
   button: Button; participants: GroupParticipant[] | undefined; recording: boolean; lineUp: boolean;
-  onJoin: () => void; onOpen: () => void;
+  onJoin: () => void; onOpen: () => void; onToggleFavourite: () => void;
 }) {
   const people = [...(participants ?? [])].sort((x, y) => Number(y.talking) - Number(x.talking));
   const talking = people.some((p) => p.talking);
   const name = buttonLabel(button);
   return (
     <div className="group-tile">
+      <div className="tile-top">
       <button className="tile-open" onClick={onOpen} title={`Show ${name}`}>
         <span className="tile-head">
           <span className={`activity${talking ? ' activity-on' : ''}`} />
@@ -668,6 +686,8 @@ function GroupTile({ button, participants, recording, lineUp, onJoin, onOpen }: 
           {button.target_group_transcribe_enabled && <span className="info-tag">Transcribed</span>}
         </span>
       </button>
+      <StarButton name={name} on={button.favourite} onToggle={onToggleFavourite} />
+      </div>
       <button className="card-join tile-join" disabled={!lineUp} onClick={onJoin}>Join</button>
     </div>
   );
@@ -1085,15 +1105,32 @@ export default function App() {
   const directButtons = firstPerTarget(session.buttons.filter((b) => b.button_type === 'direct'), (b) => b.target_extension);
   const groupButtons = firstPerTarget(session.buttons.filter((b) => b.button_type === 'group'), (b) => b.target_group_dial_code);
   const isJoined = (b: Button) => (slotStates[lineSlot(b.target_group_dial_code!)]?.status ?? 'idle') !== 'idle';
-  const fullGroups = groupButtons.filter((b) => isJoined(b) || openGroups.has(b.target_group_dial_code!));
-  const tileGroups = groupButtons.filter((b) => !fullGroups.includes(b));
+  // Full cards: joined groups first, then favourites, then any opened from
+  // a tile; everything else is a tile under "Other groups".
+  const fullRank = (b: Button) => isJoined(b) ? 0 : b.favourite ? 1 : openGroups.has(b.target_group_dial_code!) ? 2 : 3;
+  const fullGroups = groupButtons.filter((b) => fullRank(b) < 3)
+    .map((b, i) => ({ b, i })).sort((x, y) => fullRank(x.b) - fullRank(y.b) || x.i - y.i).map((x) => x.b);
+  const tileGroups = groupButtons.filter((b) => fullRank(b) === 3);
   const setOpenGroup = (code: string, open: boolean) => setOpenGroups((prev) => {
     const next = new Set(prev);
     if (open) next.add(code); else next.delete(code);
     return next;
   });
+  // Star / unstar, shown at once and saved in the background; a failed save
+  // puts it back. Unstarring also clears "opened", so it drops to a tile.
+  const setFavourite = (b: Button, favourite: boolean) => {
+    const apply = (fav: boolean) => setSession((s) => s && ({
+      ...s, buttons: s.buttons.map((x) => x.id === b.id ? { ...x, favourite: fav } : x),
+    }));
+    apply(favourite);
+    if (!favourite) setOpenGroup(b.target_group_dial_code!, false);
+    api.setFavourite(b.id, favourite).catch((err) => {
+      console.warn('saving favourite failed', err);
+      apply(!favourite);
+    });
+  };
   // Joining or leaving clears "opened", so a group you leave goes back to
-  // being a tile.
+  // being a tile (or stays a card, if it's a favourite).
   const joinOrLeave = (b: Button) => {
     setOpenGroup(b.target_group_dial_code!, false);
     handleLineToggle(b);
@@ -1195,9 +1232,12 @@ export default function App() {
         </section>
 
         <section className="client-section">
-          <h2>Groups</h2>
-          {/* Joined groups (and any opened from a tile) get the full card;
-              the rest are small tiles. */}
+          <div className="section-head">
+            <h2>Groups</h2>
+            {groupButtons.length > 0 && <span className="section-hint">★ a group to keep it open here, joined or not</span>}
+          </div>
+          {/* Joined and favourite groups (and any opened from a tile) get the
+              full card; the rest are small tiles. */}
           {fullGroups.length > 0 && (
             <div className="card-grid">
               {fullGroups.map((b) => {
@@ -1207,7 +1247,8 @@ export default function App() {
                     actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
                     selfExt={session.extension} recording={live.recording.groups.includes(b.target_group_dial_code!)}
                     onToggleJoin={() => joinOrLeave(b)}
-                    onCollapse={state.status === 'idle' ? () => setOpenGroup(b.target_group_dial_code!, false) : undefined} />
+                    onToggleFavourite={() => setFavourite(b, !b.favourite)}
+                    onCollapse={state.status === 'idle' && !b.favourite ? () => setOpenGroup(b.target_group_dial_code!, false) : undefined} />
                 );
               })}
             </div>
@@ -1219,7 +1260,8 @@ export default function App() {
                 {tileGroups.map((b) => (
                   <GroupTile key={b.id} button={b} participants={participants?.[b.target_group_dial_code!]}
                     recording={live.recording.groups.includes(b.target_group_dial_code!)} lineUp={lineUp}
-                    onJoin={() => joinOrLeave(b)} onOpen={() => setOpenGroup(b.target_group_dial_code!, true)} />
+                    onJoin={() => joinOrLeave(b)} onOpen={() => setOpenGroup(b.target_group_dial_code!, true)}
+                    onToggleFavourite={() => setFavourite(b, true)} />
                 ))}
               </div>
             </>

@@ -14,6 +14,7 @@ export interface Button {
   target_name: string | null; // direct buttons: who that extension belongs to
   label: string | null;
   sort_order: number;
+  favourite: boolean; // group buttons: shown as a full card, joined or not
 }
 
 export interface TranscriptLine {
@@ -113,6 +114,11 @@ export const api = {
   // Served to signed-in users only (the login cookie rides along with <img>).
   avatarUrl(extension: string, version: number): string {
     return `${BASE}/avatars/${encodeURIComponent(extension)}?v=${version}`;
+  },
+
+  // Star / unstar one of your group buttons.
+  setFavourite(buttonId: string, favourite: boolean): Promise<{ ok: boolean }> {
+    return req(`/buttons/${encodeURIComponent(buttonId)}`, { method: 'PATCH', body: JSON.stringify({ favourite }) });
   },
 
   // dial code -> who's in that group right now (see the backend route).

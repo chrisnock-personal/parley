@@ -2,7 +2,7 @@
 import express, { Router } from 'express';
 import config from '../config';
 import { requireIntercomClientAuth, signIntercomClientToken } from '../middleware/intercomClientSession';
-import { authenticateDirectoryUser, avatarVersions, getAvatar, getDirectoryUser, listButtons, listDirectoryUsers, setAvatar } from '../services/directoryUserService';
+import { authenticateDirectoryUser, avatarVersions, getAvatar, getDirectoryUser, listButtons, listDirectoryUsers, setAvatar, setButtonFavourite } from '../services/directoryUserService';
 import { getSettings } from '../services/settingsService';
 import { audit } from '../services/auditService';
 import { recordIntercomClientCallStart, recordIntercomClientCallEnd } from '../services/pbxService';
@@ -40,6 +40,17 @@ router.get('/me', requireIntercomClientAuth, async (req, res, next) => {
   try {
     const buttons = await listButtons(req.intercomClientUser!.id);
     res.json({ name: req.intercomClientUser!.name, extension: req.intercomClientUser!.extension, buttons });
+  } catch (err) { next(err); }
+});
+
+// Star / unstar one of your own group buttons. A display preference, so
+// not audited.
+router.patch('/buttons/:id', requireIntercomClientAuth, async (req, res, next) => {
+  try {
+    const { favourite } = req.body ?? {};
+    if (typeof favourite !== 'boolean') return res.status(400).json({ error: 'favourite must be true or false' });
+    await setButtonFavourite(req.intercomClientUser!.id, req.params.id, favourite);
+    res.json({ ok: true });
   } catch (err) { next(err); }
 });
 
