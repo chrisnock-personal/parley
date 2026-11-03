@@ -291,6 +291,13 @@ export class CallManager {
     this.patch(slot, { listenMuted });
   }
 
+  /** Turn a slot's playback down to `factor` of its volume (or back, with
+   * 1) without touching the volume setting itself: read-aloud ducking. */
+  duck(slot: SlotId, factor: number): void {
+    const el = this.audioEls.get(slot);
+    if (el) el.volume = Math.min(1, Math.max(0, this.getState(slot).volume * factor));
+  }
+
   setVolume(slot: SlotId, volume: number): void {
     const v = Math.min(1, Math.max(0, volume));
     const el = this.audioEls.get(slot);

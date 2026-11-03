@@ -2,7 +2,7 @@
 import express, { Router } from 'express';
 import config from '../config';
 import { requireIntercomClientAuth, signIntercomClientToken } from '../middleware/intercomClientSession';
-import { authenticateDirectoryUser, avatarVersions, getAvatar, getDirectoryUser, listButtons, listDirectoryUsers, setAvatar, setButtonFavourite } from '../services/directoryUserService';
+import { authenticateDirectoryUser, avatarVersions, getAvatar, getDirectoryUser, listButtons, listDirectoryUsers, setAvatar, setButtonPrefs } from '../services/directoryUserService';
 import { getSettings } from '../services/settingsService';
 import { audit } from '../services/auditService';
 import { recordIntercomClientCallStart, recordIntercomClientCallEnd } from '../services/pbxService';
@@ -44,13 +44,17 @@ router.get('/me', requireIntercomClientAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Star / unstar one of your own group buttons. A display preference, so
-// not audited.
+// Your own preferences on one of your group buttons: the star (favourite)
+// and reading chat aloud (read_aloud). Either or both. Display preferences,
+// so not audited.
 router.patch('/buttons/:id', requireIntercomClientAuth, async (req, res, next) => {
   try {
-    const { favourite } = req.body ?? {};
-    if (typeof favourite !== 'boolean') return res.status(400).json({ error: 'favourite must be true or false' });
-    await setButtonFavourite(req.intercomClientUser!.id, req.params.id, favourite);
+    const { favourite, read_aloud } = req.body ?? {};
+    const bad = (v: unknown) => v !== undefined && typeof v !== 'boolean';
+    if (bad(favourite) || bad(read_aloud) || (favourite === undefined && read_aloud === undefined)) {
+      return res.status(400).json({ error: 'favourite and/or read_aloud must be true or false' });
+    }
+    await setButtonPrefs(req.intercomClientUser!.id, req.params.id, { favourite, read_aloud });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });

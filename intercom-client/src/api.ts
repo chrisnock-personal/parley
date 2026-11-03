@@ -16,6 +16,7 @@ export interface Button {
   label: string | null;
   sort_order: number;
   favourite: boolean; // group buttons: shown as a full card, joined or not
+  read_aloud: boolean; // group buttons: typed messages read aloud while joined
 }
 
 export interface TranscriptLine {
@@ -137,9 +138,9 @@ export const api = {
     return `${BASE}/avatars/${encodeURIComponent(extension)}?v=${version}`;
   },
 
-  // Star / unstar one of your group buttons.
-  setFavourite(buttonId: string, favourite: boolean): Promise<{ ok: boolean }> {
-    return req(`/buttons/${encodeURIComponent(buttonId)}`, { method: 'PATCH', body: JSON.stringify({ favourite }) });
+  // Your preferences on one of your group buttons: the star, read aloud.
+  setButtonPrefs(buttonId: string, prefs: { favourite?: boolean; read_aloud?: boolean }): Promise<{ ok: boolean }> {
+    return req(`/buttons/${encodeURIComponent(buttonId)}`, { method: 'PATCH', body: JSON.stringify(prefs) });
   },
 
   // dial code -> who's in that group right now (see the backend route).

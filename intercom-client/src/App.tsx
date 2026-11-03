@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useLayoutEffect, createContex
 import { api, Button, ChatMessage, DirectoryEntry, GroupParticipant, IntercomClientSession, LatestIds, LiveState, TranscriptLine } from './api';
 import { createIntercomClientUa, targetUri } from './sipUa';
 import { markSvg, PRODUCT_NAME } from '../../brand/mark';
+import { TTS_AVAILABLE, ReadAloudPrefs, loadPrefs, savePrefs, primeSpeech, speakNow, useReadAloud, useVoices } from './readAloud';
 import { CallManager, SlotId, SlotState, SlotStates, ICM_SLOT, lineSlot, idleSlot, CallEventPayload } from './calls';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -332,15 +333,20 @@ function PersonCard({ person, anchor, online, talking, groups, keyButton, callab
 }
 
 // A titled, collapsible section of a group card -collapsed by default.
-function Section({ title, badge, children }: { title: string; badge?: React.ReactNode; children: React.ReactNode }) {
+function Section({ title, badge, actions, children }: {
+  title: string; badge?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`card-section${open ? ' open' : ''}`}>
-      <button className="card-section-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span>{title}</span>
-        {badge}
-        <span className="chevron"><Icon name="chevron" /></span>
-      </button>
+      <div className="card-section-headrow">
+        <button className="card-section-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          <span>{title}</span>
+          {badge}
+          <span className="chevron"><Icon name="chevron" /></span>
+        </button>
+        {actions}
+      </div>
       {open && <div className="card-section-body">{children}</div>}
     </div>
   );
@@ -536,8 +542,9 @@ function IcmSection({ state, actions, keys, directory, lineUp, recording, online
 // writable) whether or not you've joined. With both on, a filter narrows it
 // to Spoken or Typed. Polls every 2s while open and stays pinned to the
 // newest line unless you've scrolled up.
-function ConversationPanel({ dialCode, selfExt, transcribe, chat, onSeen, fill = false }: {
+function ConversationPanel({ dialCode, selfExt, transcribe, chat, onSeen, fill = false, readingId = null }: {
   dialCode: string; selfExt: string; transcribe: boolean; chat: boolean;
+  readingId?: string | null; // chat message being read aloud, outlined
   onSeen: (kind: keyof LatestIds, id: string) => void;
   fill?: boolean; // the phone sheet: take the whole height
 }) {
@@ -636,10 +643,11 @@ function ConversationPanel({ dialCode, selfExt, transcribe, chat, onSeen, fill =
         {items.map((it) => (
           <div key={it.key} className={`chat-line${it.ext === selfExt ? ' self' : ''}`}>
             <Avatar name={it.name} id={it.ext} size={24} openable />
-            <div className={`chat-bubble${it.typed ? ' typed' : ''}`}>
+            <div className={`chat-bubble${it.typed ? ' typed' : ''}${it.key === `c${readingId}` ? ' reading' : ''}`}>
               <div className="chat-meta">
                 {it.name}{it.ext === selfExt ? ' (you)' : ''} · {new Date(it.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 {both && <> · <Icon name={it.typed ? 'keyboard' : 'mic'} size={11} /> {it.typed ? 'typed' : 'said'}</>}
+                {it.key === `c${readingId}` && <span className="reading-label"> · reading aloud</span>}
               </div>
               {it.text}
             </div>
@@ -674,8 +682,40 @@ function useNarrow(): boolean {
 
 // A group's transcript and/or chat, whichever it has switched on: a
 // collapsible section in the card, or on a phone a full-screen sheet.
-function ConversationSection({ button, selfExt, hasNew, onSeen }: {
-  button: Button; selfExt: string; hasNew: boolean; onSeen: (kind: keyof LatestIds, id: string) => void;
+// A group's read-aloud state and controls, from App's useReadAloud.
+type ReadAloudCtl = {
+  on: boolean; joined: boolean; readingId: string | null; waiting: number;
+  toggle: () => void; skip: () => void; stop: () => void;
+};
+
+function ReadAloudToggle({ ra, compact = false }: { ra: ReadAloudCtl; compact?: boolean }) {
+  if (!TTS_AVAILABLE) return null;
+  const label = ra.on ? 'Read aloud: on' : 'Read aloud';
+  const title = ra.on
+    ? (ra.joined ? 'Typed messages in this group are read aloud. Click to stop.' : 'On: typed messages will be read aloud once you join')
+    : 'Read typed messages in this group aloud while you\'re in it';
+  return (
+    <button className={`ra-btn${ra.on ? ' on' : ''}${compact ? ' compact' : ''}`} aria-pressed={ra.on}
+      aria-label={compact ? label : undefined} title={title} onClick={ra.toggle}>
+      <Icon name={ra.on ? 'volume' : 'volumeOff'} size={compact ? 20 : 14} />{!compact && <span>{label}</span>}
+    </button>
+  );
+}
+
+function ReadAloudQueue({ ra }: { ra: ReadAloudCtl }) {
+  if (!ra.readingId && !ra.waiting) return null;
+  return (
+    <div className="ra-queue" role="status">
+      <Icon name="volume" size={13} />
+      <span>{ra.readingId ? 'Reading aloud' : 'Waiting'}{ra.waiting ? ` · ${ra.waiting} more` : ''}</span>
+      {ra.readingId && <button className="link-btn" onClick={ra.skip}>Skip</button>}
+      <button className="link-btn" onClick={ra.stop}>Stop</button>
+    </div>
+  );
+}
+
+function ConversationSection({ button, selfExt, hasNew, onSeen, ra }: {
+  button: Button; selfExt: string; hasNew: boolean; onSeen: (kind: keyof LatestIds, id: string) => void; ra: ReadAloudCtl;
 }) {
   const transcribe = !!button.target_group_transcribe_enabled;
   const chat = !!button.target_group_chat_enabled;
@@ -690,16 +730,21 @@ function ConversationSection({ button, selfExt, hasNew, onSeen }: {
   }, [sheet]);
   const panel = (fill: boolean) => (
     <ConversationPanel dialCode={button.target_group_dial_code!} selfExt={selfExt}
-      transcribe={transcribe} chat={chat} onSeen={onSeen} fill={fill} />
+      transcribe={transcribe} chat={chat} onSeen={onSeen} fill={fill} readingId={ra.readingId} />
   );
   const badge = hasNew ? <span className="new-badge">new</span> : null;
-  if (!narrow) return <Section title={title} badge={badge}>{panel(false)}</Section>;
+  const toggle = chat ? <ReadAloudToggle ra={ra} /> : null;
+  if (!narrow) return <><Section title={title} badge={badge} actions={toggle}>{panel(false)}</Section><ReadAloudQueue ra={ra} /></>;
   return (
     <div className="card-section">
-      <button className="card-section-head" onClick={() => setSheet(true)}>
-        <span>{title}</span>{badge}
-        <span className="chevron open-right"><Icon name="chevron" /></span>
-      </button>
+      <div className="card-section-headrow">
+        <button className="card-section-head" onClick={() => setSheet(true)}>
+          <span>{title}</span>{badge}
+          <span className="chevron open-right"><Icon name="chevron" /></span>
+        </button>
+        {toggle}
+      </div>
+      <ReadAloudQueue ra={ra} />
       {sheet && (
         <div className="convo-sheet" role="dialog" aria-modal="true" aria-label={`${buttonLabel(button)} ${title.toLowerCase()}`}>
           <div className="convo-sheet-head">
@@ -710,7 +755,9 @@ function ConversationSection({ button, selfExt, hasNew, onSeen }: {
               <div className="card-name-text">{buttonLabel(button)}</div>
               <div className="card-sub">{title}</div>
             </div>
+            {chat && <ReadAloudToggle ra={ra} compact />}
           </div>
+          <ReadAloudQueue ra={ra} />
           {panel(true)}
         </div>
       )}
@@ -723,10 +770,11 @@ function ConversationSection({ button, selfExt, hasNew, onSeen }: {
 // To Talk. Then collapsible Participants and (for transcribed groups)
 // Transcript, and Join / Leave at the bottom.
 const STACK_MAX = 4;
-function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, hasNew, onSeen, onToggleJoin, onToggleFavourite, onCollapse }: {
+function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, hasNew, onSeen, ra, onPttHeld, onToggleJoin, onToggleFavourite, onCollapse }: {
   button: Button; state: SlotState; actions: SlotActions; lineUp: boolean; recording: boolean;
   participants: GroupParticipant[] | undefined; selfExt: string; onToggleJoin: () => void;
   hasNew: boolean; onSeen: (kind: keyof LatestIds, id: string) => void;
+  ra: ReadAloudCtl; onPttHeld: (held: boolean) => void;
   onToggleFavourite: () => void;
   onCollapse?: () => void; // an unjoined group opened from its tile: shrink it back
 }) {
@@ -734,9 +782,14 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
   const joined = state.status !== 'idle';
   const live = state.status === 'connected';
   const [pttHeld, setPttHeld] = useState(false);
+  // Never leave read-aloud paused for a card that's gone.
+  const pttCb = useRef(onPttHeld);
+  pttCb.current = onPttHeld;
+  useEffect(() => () => pttCb.current(false), []);
   const releasePtt = () => {
     if (!pttHeld) return;
     setPttHeld(false);
+    onPttHeld(false);
     actions.setMuted(slot, true);
   };
   // Talkers first, so they stay visible when the stack is cut off at STACK_MAX.
@@ -758,6 +811,11 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
             {recording && <RecTag title="Someone in this group is being recorded, so the group's audio is recorded" />}
             {button.target_group_transcribe_enabled && <span className="info-tag" title="Speech in this group is transcribed and kept">Transcribed</span>}
             {button.target_group_chat_enabled && <span className="info-tag" title="This group has a typed chat">Chat</span>}
+            {button.target_group_chat_enabled && ra.on && TTS_AVAILABLE && (
+              <span className="info-tag ra-tag" title={joined ? 'Typed messages are read aloud' : 'Typed messages will be read aloud once you join'}>
+                {joined ? 'Read aloud' : 'Read aloud when joined'}
+              </span>
+            )}
             <span>
               {GROUP_PREFIX}{button.target_group_dial_code} · {mode} · {joined ? (live ? 'joined' : state.status) : 'not joined'}
               {state.onHold ? ' · on hold' : ''}
@@ -802,6 +860,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
               if (!state.muted) return;
               e.currentTarget.setPointerCapture(e.pointerId);
               setPttHeld(true);
+              onPttHeld(true);
               actions.setMuted(slot, false);
             }}
             onPointerUp={releasePtt}
@@ -827,7 +886,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
       )}
 
       {(button.target_group_transcribe_enabled || button.target_group_chat_enabled) && (
-        <ConversationSection button={button} selfExt={selfExt} hasNew={hasNew} onSeen={onSeen} />
+        <ConversationSection button={button} selfExt={selfExt} hasNew={hasNew} onSeen={onSeen} ra={ra} />
       )}
 
       <button className={joined ? 'card-leave' : 'card-join'} disabled={!joined && !lineUp} onClick={onToggleJoin}>
@@ -854,6 +913,9 @@ function GroupTile({ button, participants, recording, lineUp, hasNew, onJoin, on
         <span className="tile-head">
           <span className={`activity${talking ? ' activity-on' : ''}`} />
           <span className="tile-name">{name}</span>
+          {button.read_aloud && button.target_group_chat_enabled && TTS_AVAILABLE && (
+            <span className="tile-ra" title="Read aloud is on (once you join)"><Icon name="volume" size={14} /></span>
+          )}
         </span>
         <span className="tile-meta">
           {people.length > 0
@@ -896,9 +958,57 @@ async function cropToSquare(file: File): Promise<Blob> {
 // "My profile": opened from your name in the top bar. Your picture (change /
 // remove), who you are, your line, whether your calls are recorded, and the
 // groups you have.
-function ProfileMenu({ name, extension, lineStatus, recorded, groups, hasPhoto, onPhotoChanged }: {
+// Read-aloud voice settings, in the profile menu. Per device: voices differ
+// between browsers and machines. Which groups are read is set on each card.
+function ReadAloudSettings({ prefs, onChange, groups }: {
+  prefs: ReadAloudPrefs; onChange: (p: ReadAloudPrefs) => void; groups: string[];
+}) {
+  const voices = useVoices();
+  if (!TTS_AVAILABLE) return null;
+  const set = (patch: Partial<ReadAloudPrefs>) => onChange({ ...prefs, ...patch });
+  const check = (key: 'sayWho' | 'duck' | 'waitPtt' | 'sayGroup', label: string, help?: string) => (
+    <label className="ra-check">
+      <input type="checkbox" checked={prefs[key]} onChange={(e) => set({ [key]: e.target.checked })} />
+      <span>{label}{help && <span className="dim ra-help">{help}</span>}</span>
+    </label>
+  );
+  return (
+    <div className="ra-settings">
+      <div className="ra-settings-head">Read messages aloud</div>
+      <div className="dim ra-help">
+        {groups.length ? `On for ${groups.join(', ')}, while you're in them.` : 'Turn it on with the speaker on a group\'s conversation.'} These voice settings are for this device.
+      </div>
+      <label className="ra-field">Voice
+        <select value={prefs.voiceURI ?? ''} onChange={(e) => set({ voiceURI: e.target.value || null })}>
+          <option value="">This browser's default</option>
+          {voices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>)}
+        </select>
+      </label>
+      <label className="ra-field">Speed
+        <span className="ra-slider">
+          <input type="range" min={50} max={200} step={10} value={Math.round(prefs.rate * 100)} onChange={(e) => set({ rate: Number(e.target.value) / 100 })} />
+          <span className="mono">{prefs.rate.toFixed(1)}×</span>
+        </span>
+      </label>
+      <label className="ra-field">Volume
+        <span className="ra-slider">
+          <input type="range" min={0} max={100} step={5} value={Math.round(prefs.volume * 100)} onChange={(e) => set({ volume: Number(e.target.value) / 100 })} />
+          <span className="mono">{Math.round(prefs.volume * 100)}%</span>
+        </span>
+      </label>
+      {check('sayWho', 'Say who sent it', '"Producer: guest two is in make-up"')}
+      {check('duck', 'Turn group audio down while reading')}
+      {check('waitPtt', 'Wait while I\'m talking', 'Held until you let go of Push To Talk')}
+      {check('sayGroup', 'Say which group, when more than one is on')}
+      <button onClick={() => speakNow(`${prefs.sayWho ? 'Producer: ' : ''}guest two is in make-up, ten minutes`, prefs)}>Play a test message</button>
+    </div>
+  );
+}
+
+function ProfileMenu({ name, extension, lineStatus, recorded, groups, hasPhoto, onPhotoChanged, raPrefs, onRaPrefs, raGroups }: {
   name: string; extension: string; lineStatus: string; recorded: boolean; groups: string[];
   hasPhoto: boolean; onPhotoChanged: () => void;
+  raPrefs: ReadAloudPrefs; onRaPrefs: (p: ReadAloudPrefs) => void; raGroups: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -958,6 +1068,7 @@ function ProfileMenu({ name, extension, lineStatus, recorded, groups, hasPhoto, 
             <div><span className="dim">Call recording</span><span>{recorded ? 'Your calls are recorded' : 'Off'}</span></div>
             <div><span className="dim">Groups</span><span>{groups.length ? groups.join(', ') : 'None'}</span></div>
           </div>
+          <ReadAloudSettings prefs={raPrefs} onChange={onRaPrefs} groups={raGroups} />
         </div>
       )}
     </div>
@@ -1036,6 +1147,22 @@ export default function App() {
   // newest this user has had on screen, for the "new" markers.
   const [latest, setLatest] = useState<Record<string, LatestIds>>({});
   const [seen, markSeen] = useSeen(session?.extension, latest);
+  // Read aloud: voice settings per device; which groups is per button
+  // (server). Push To Talk held anywhere pauses reading.
+  const [raPrefs, setRaPrefsState] = useState<ReadAloudPrefs>(loadPrefs);
+  const setRaPrefs = (p: ReadAloudPrefs) => { setRaPrefsState(p); savePrefs(p); };
+  const pttHeldSlots = useRef(new Set<string>());
+  const readAloud = useReadAloud({
+    eligible: (session?.buttons ?? [])
+      .filter((b) => b.button_type === 'group' && b.read_aloud && b.target_group_chat_enabled
+        && slotStates[lineSlot(b.target_group_dial_code!)]?.status === 'connected')
+      .map((b) => ({ code: b.target_group_dial_code!, group: buttonLabel(b) })),
+    latest,
+    selfExt: session?.extension ?? '',
+    prefs: raPrefs,
+    isPttHeld: () => pttHeldSlots.current.size > 0,
+    duck: (code, on) => managerRef.current.duck(lineSlot(code), on ? 0.3 : 1),
+  });
   const [live, setLive] = useState<Pick<LiveState, 'online' | 'recording' | 'avatars'>>({ online: [], recording: { self: false, icm: false, groups: [] }, avatars: {} });
   const [pollTick, setPollTick] = useState(0); // bump to poll right away (e.g. after changing your photo)
   const [card, setCard] = useState<{ person: { extension: string; name: string }; anchor: DOMRect } | null>(null);
@@ -1062,6 +1189,11 @@ export default function App() {
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+  // Effects that set up the line, polls and directory key on WHO is logged
+  // in, not on the session object: that object changes whenever a button
+  // preference does (a star, read aloud), and re-running the line's effect
+  // would tear down the SIP registration and every call on it.
+  const sessionExt = session?.extension;
 
   useEffect(() => {
     intercomAutoAnswerRef.current = intercomAutoAnswer;
@@ -1087,7 +1219,7 @@ export default function App() {
     poll();
     const t = window.setInterval(poll, 1000);
     return () => { stopped = true; window.clearInterval(t); };
-  }, [session, needsSipPassword, pollTick]);
+  }, [sessionExt, needsSipPassword, pollTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reattach an existing intercom client session on a same-tab reload.
   useEffect(() => {
@@ -1175,7 +1307,7 @@ export default function App() {
       ua.stop();
       uaRef.current = null;
     };
-  }, [session, reconnectTick]);
+  }, [sessionExt, reconnectTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogin = useCallback((s: IntercomClientSession, password: string) => {
     passwordRef.current = password;
@@ -1234,7 +1366,7 @@ export default function App() {
     load();
     const t = window.setInterval(load, 60_000);
     return () => window.clearInterval(t);
-  }, [session]);
+  }, [sessionExt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Group line: join or leave. Each line has its own slot, so joining one
   // never disturbs another. A group's PTT default seeds the initial talk state.
@@ -1312,18 +1444,38 @@ export default function App() {
     return (!!b.target_group_chat_enabled && idGt(l.chat, s.chat))
       || (!!b.target_group_transcribe_enabled && idGt(l.transcript, s.transcript));
   };
-  // Star / unstar, shown at once and saved in the background; a failed save
-  // puts it back. Unstarring also clears "opened", so it drops to a tile.
-  const setFavourite = (b: Button, favourite: boolean) => {
-    const apply = (fav: boolean) => setSession((s) => s && ({
-      ...s, buttons: s.buttons.map((x) => x.id === b.id ? { ...x, favourite: fav } : x),
+  // A button preference (the star, read aloud), shown at once and saved in
+  // the background; a failed save puts it back.
+  const setButtonPref = (b: Button, field: 'favourite' | 'read_aloud', value: boolean) => {
+    const apply = (v: boolean) => setSession((s) => s && ({
+      ...s, buttons: s.buttons.map((x) => x.id === b.id ? { ...x, [field]: v } : x),
     }));
-    apply(favourite);
-    if (!favourite) setOpenGroup(b.target_group_dial_code!, false);
-    api.setFavourite(b.id, favourite).catch((err) => {
-      console.warn('saving favourite failed', err);
-      apply(!favourite);
+    apply(value);
+    api.setButtonPrefs(b.id, { [field]: value }).catch((err) => {
+      console.warn(`saving ${field} failed`, err);
+      apply(!value);
     });
+  };
+  // Unstarring also clears "opened", so the group drops to a tile.
+  const setFavourite = (b: Button, favourite: boolean) => {
+    if (!favourite) setOpenGroup(b.target_group_dial_code!, false);
+    setButtonPref(b, 'favourite', favourite);
+  };
+  const raFor = (b: Button): ReadAloudCtl => {
+    const code = b.target_group_dial_code!;
+    return {
+      on: b.read_aloud,
+      joined: slotStates[lineSlot(code)]?.status === 'connected',
+      readingId: readAloud.reading?.code === code ? readAloud.reading.id : null,
+      waiting: readAloud.waiting[code] ?? 0,
+      toggle: () => {
+        if (!b.read_aloud) primeSpeech(); // inside the click, so the browser allows speech
+        else readAloud.stop(code);
+        setButtonPref(b, 'read_aloud', !b.read_aloud);
+      },
+      skip: readAloud.skip,
+      stop: () => readAloud.stop(code),
+    };
   };
   // Joining or leaving clears "opened", so a group you leave goes back to
   // being a tile (or stays a card, if it's a favourite).
@@ -1365,7 +1517,9 @@ export default function App() {
           <span className="brand"><Mark size={26} /> {PRODUCT_NAME}</span>
           <ProfileMenu name={session.name} extension={session.extension} lineStatus={lineStatus}
             recorded={live.recording.self} groups={groupButtons.map(buttonLabel)}
-            hasPhoto={!!live.avatars[session.extension]} onPhotoChanged={() => setPollTick((t) => t + 1)} />
+            hasPhoto={!!live.avatars[session.extension]} onPhotoChanged={() => setPollTick((t) => t + 1)}
+            raPrefs={raPrefs} onRaPrefs={setRaPrefs}
+            raGroups={groupButtons.filter((b) => b.read_aloud && b.target_group_chat_enabled).map(buttonLabel)} />
           <span className={`line-status line-${lineStatus}`}>
             {lineStatus === 'registered' ? '● line up' : lineStatus === 'connecting' ? '○ connecting…' : '✕ line down -retrying'}
             {lineStatus !== 'registered' && lineError && ` (${lineError})`}
@@ -1443,6 +1597,8 @@ export default function App() {
                     actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
                     selfExt={session.extension} recording={live.recording.groups.includes(b.target_group_dial_code!)}
                     hasNew={hasNew(b)} onSeen={(kind, id) => markSeen(b.target_group_dial_code!, kind, id)}
+                    ra={raFor(b)}
+                    onPttHeld={(held) => { const k = b.target_group_dial_code!; if (held) pttHeldSlots.current.add(k); else pttHeldSlots.current.delete(k); }}
                     onToggleJoin={() => joinOrLeave(b)}
                     onToggleFavourite={() => setFavourite(b, !b.favourite)}
                     onCollapse={state.status === 'idle' && !b.favourite ? () => setOpenGroup(b.target_group_dial_code!, false) : undefined} />

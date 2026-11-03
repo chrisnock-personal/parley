@@ -45,6 +45,7 @@ export interface DirectoryUserButton {
   label: string | null;
   sort_order: number;
   favourite: boolean; // group buttons: always shown as a full card in the client (migration 015)
+  read_aloud: boolean; // group buttons: the client reads typed messages aloud while joined (migration 017)
 }
 
 const PUBLIC_COLUMNS = 'id, name, extension, enabled, siprec_enabled, created_at, updated_at';
@@ -175,7 +176,7 @@ export async function listButtons(directoryUserId: string): Promise<DirectoryUse
             g.transcribe_enabled AS target_group_transcribe_enabled,
             g.chat_enabled AS target_group_chat_enabled,
             t.name AS target_name,
-            b.label, b.sort_order, b.favourite
+            b.label, b.sort_order, b.favourite, b.read_aloud
      FROM intercom_directory_user_buttons b
      LEFT JOIN intercom_groups g ON g.id = b.target_group_id
      LEFT JOIN intercom_directory_users t ON b.button_type = 'direct' AND t.extension = b.target_extension
@@ -226,12 +227,16 @@ export async function addButton(
   return all.find((x) => x.id === b.id)!;
 }
 
-/** The user's own star on one of their group buttons. */
-export async function setButtonFavourite(directoryUserId: string, buttonId: string, favourite: boolean): Promise<void> {
+/** The user's own preferences on one of their group buttons: the star
+ * (favourite) and reading chat aloud. Either or both; the other is kept. */
+export async function setButtonPrefs(
+  directoryUserId: string, buttonId: string, prefs: { favourite?: boolean; read_aloud?: boolean }
+): Promise<void> {
   const result = await query(
-    `UPDATE intercom_directory_user_buttons SET favourite = $3
+    `UPDATE intercom_directory_user_buttons
+        SET favourite = COALESCE($3, favourite), read_aloud = COALESCE($4, read_aloud)
       WHERE id = $1 AND directory_user_id = $2 AND button_type = 'group'`,
-    [buttonId, directoryUserId, favourite]);
+    [buttonId, directoryUserId, prefs.favourite ?? null, prefs.read_aloud ?? null]);
   if (result.rowCount === 0) throw createError('Group button not found', 404);
 }
 
