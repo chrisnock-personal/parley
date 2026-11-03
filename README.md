@@ -389,6 +389,37 @@ cancellation may not cover OS speech synthesis; test on real devices, and
 if needed mute the mic while reading on open mic, or play server-made audio
 through the page so echo cancellation can see it.
 
+**Transcript and chat retention: archive before culling? (needs working through)**
+Today (checked 2026-11-03): transcript lines and chat messages are stored
+in Postgres (`intercom_transcript_lines`, `intercom_chat_messages`), kept
+for Settings' "Keep transcripts and chat for" days (default 30), then
+**deleted** hourly by controller-backend. They can also be purged by hand
+(Database page, min 30 days). Nothing archives them: the Database page's
+archive dumps only `audit_log` and `intercom_sessions` (and dumps those
+whole: its "older than N days" only ends up in the file name). They
+survive only inside a full backup. They aren't linked to SIP-REC
+recordings; the recorder (e.g. CallNest) keeps its own copy of the audio
+with its own retention, transcription and legal hold.
+Questions:
+- **What the transcript is for.** An operational aid (catch up on the
+  last hour), or a record? If a record, the recording in the SIP-REC
+  recorder is the authoritative one, and Parley's transcript could stay
+  short-lived.
+- **Archive before deleting.** Before the hourly prune, write the lines
+  about to go to a dated file per group per day (JSONL or plain text),
+  locally or pushed over SCP like the Database archive (which should also
+  honour its "older than" and include these tables).
+- **Per-group retention.** Some groups (a compliance desk) may need longer,
+  some (a chatty floor) none at all; a per-group override of the global
+  setting, including "don't keep".
+- **Hand it to the recorder.** Send each group's lines to the recorder as
+  metadata on the matching recordings, so search, retention and legal hold
+  live in one place (CallNest has an ingest API).
+- **Searching and exporting.** A console page to search past
+  transcripts/chat by group, person, date and words, and export a range.
+- **Summaries.** An AI summary per group per shift, using the shared
+  Ollama, kept after the lines themselves are culled.
+
 **Client UI (mock first)**
 - **Keyboard hotkeys** (from Eyevinn), if wanted: per-group push-to-talk
   and mute, answer/hang up the intercom, a global mute. Mainly for desk
