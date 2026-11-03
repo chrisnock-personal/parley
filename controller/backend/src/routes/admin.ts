@@ -138,7 +138,7 @@ router.post('/db/vacuum', async (req, res, next) => {
 // its own automatic hourly prune (HEALTH_LOG_RETENTION_DAYS, see
 // endpointHealthService.ts) and isn't offered here to avoid two retention
 // mechanisms fighting over the same table.
-const PURGEABLE_TABLES = ['audit_log', 'intercom_sessions', 'intercom_transcript_lines'] as const;
+const PURGEABLE_TABLES = ['audit_log', 'intercom_sessions', 'intercom_transcript_lines', 'intercom_chat_messages'] as const;
 type PurgeableTable = typeof PURGEABLE_TABLES[number];
 
 router.post('/db/purge', async (req, res, next) => {
@@ -153,6 +153,8 @@ router.post('/db/purge', async (req, res, next) => {
       ? await query(`DELETE FROM audit_log WHERE event_time < now() - ($1 || ' days')::interval`, [days])
       : table === 'intercom_transcript_lines'
       ? await query(`DELETE FROM intercom_transcript_lines WHERE created_at < now() - ($1 || ' days')::interval`, [days])
+      : table === 'intercom_chat_messages'
+      ? await query(`DELETE FROM intercom_chat_messages WHERE created_at < now() - ($1 || ' days')::interval`, [days])
       // Never purge a live session, regardless of age.
       : await query(`DELETE FROM intercom_sessions WHERE state != 'active' AND started_at < now() - ($1 || ' days')::interval`, [days]);
 

@@ -23,6 +23,7 @@ import systemRoutes from './routes/system';
 import adminRoutes from './routes/admin';
 import settingsRoutes from './routes/settings';
 import { startTranscriptRetention } from './services/transcriptService';
+import { startChatRetention } from './services/chatService';
 
 async function main() {
   console.log('[startup] Waiting for PostgreSQL...');
@@ -59,6 +60,7 @@ async function main() {
 
   startHealthScheduler();
   startTranscriptRetention();
+  startChatRetention();
 
   let shuttingDown = false;
   async function shutdown(signal: string) {

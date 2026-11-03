@@ -40,6 +40,7 @@ export interface Group {
   ptt_default: boolean;
   dial_code: string;
   transcribe_enabled: boolean;
+  chat_enabled: boolean;
 }
 
 export interface GroupMember {
@@ -181,7 +182,7 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   return resp.json() as Promise<T>;
 }
 
-export type PurgeableTable = 'audit_log' | 'intercom_sessions' | 'intercom_transcript_lines';
+export type PurgeableTable = 'audit_log' | 'intercom_sessions' | 'intercom_transcript_lines' | 'intercom_chat_messages';
 
 export const api = {
   async login(email: string, password: string) {
@@ -228,7 +229,7 @@ export const api = {
   createGroup(body: { name: string; description?: string; mode?: 'talkback' | 'announce'; ptt_default?: boolean; dial_code?: string }) {
     return req<Group>('/groups', { method: 'POST', body: JSON.stringify(body) });
   },
-  updateGroup(id: string, body: Partial<{ name: string; description: string; mode: 'talkback' | 'announce'; ptt_default: boolean; dial_code: string; transcribe_enabled: boolean }>) {
+  updateGroup(id: string, body: Partial<{ name: string; description: string; mode: 'talkback' | 'announce'; ptt_default: boolean; dial_code: string; transcribe_enabled: boolean; chat_enabled: boolean }>) {
     return req<Group>(`/groups/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
   },
   deleteGroup(id: string) {

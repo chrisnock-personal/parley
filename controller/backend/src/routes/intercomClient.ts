@@ -8,6 +8,7 @@ import { audit } from '../services/auditService';
 import { recordIntercomClientCallStart, recordIntercomClientCallEnd } from '../services/pbxService';
 import { getLiveStatus } from '../services/pbxCoreService';
 import { listLines } from '../services/transcriptService';
+import { latestIds, listMessages, postMessage } from '../services/chatService';
 
 const router = Router();
 
@@ -95,9 +96,16 @@ router.get('/groups/participants', requireIntercomClientAuth, async (req, res, n
     }
     // Policy, not a live session: this user's calls get recorded (their
     // "Record calls" switch is on AND a recording server is configured).
-    const [self, settings] = await Promise.all([getDirectoryUser(req.intercomClientUser!.id), getSettings()]);
+    // Newest chat/transcript ids per group, for the client's "new" markers.
+    const groupIds = buttons.filter((b) => b.button_type === 'group' && b.target_group_id && b.target_group_dial_code);
+    const [self, settings, latestById] = await Promise.all([
+      getDirectoryUser(req.intercomClientUser!.id), getSettings(),
+      latestIds(groupIds.map((b) => b.target_group_id!))]);
+    const latest: Record<string, { chat: string | null; transcript: string | null }> = {};
+    for (const b of groupIds) latest[b.target_group_dial_code!] = latestById[b.target_group_id!];
     res.json({
       participants,
+      latest,
       online: live.registrations.map((r) => r.extension),
       avatars: await avatarVersions(),
       recording: {
@@ -162,6 +170,39 @@ router.get('/avatars/:extension', requireIntercomClientAuth, async (req, res, ne
     if (!a) return res.status(404).end();
     res.set({ 'Content-Type': a.mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
     res.send(a.data);
+  } catch (err) { next(err); }
+});
+
+// A group's chat (migration 016), readable and writable by anyone with a
+// button for that group whether or not they've joined it, while the group
+// has chat switched on. `?after=<id>` returns only newer messages.
+async function chatGroup(userId: string, code: string) {
+  const buttons = await listButtons(userId);
+  const button = buttons.find((b) => b.button_type === 'group' && b.target_group_dial_code === code);
+  if (!button?.target_group_id) return { error: 404 as const };
+  if (!button.target_group_chat_enabled) return { error: 403 as const };
+  return { groupId: button.target_group_id };
+}
+
+router.get('/groups/:code/chat', requireIntercomClientAuth, async (req, res, next) => {
+  try {
+    const g = await chatGroup(req.intercomClientUser!.id, req.params.code);
+    if (g.error === 404) return res.status(404).json({ error: 'Not one of your groups' });
+    if (g.error === 403) return res.status(403).json({ error: 'Chat is off for this group' });
+    const after = typeof req.query.after === 'string' && /^\d+$/.test(req.query.after) ? req.query.after : undefined;
+    res.json({ messages: await listMessages(g.groupId!, after) });
+  } catch (err) { next(err); }
+});
+
+router.post('/groups/:code/chat', requireIntercomClientAuth, async (req, res, next) => {
+  try {
+    const g = await chatGroup(req.intercomClientUser!.id, req.params.code);
+    if (g.error === 404) return res.status(404).json({ error: 'Not one of your groups' });
+    if (g.error === 403) return res.status(403).json({ error: 'Chat is off for this group' });
+    const text = req.body?.text;
+    if (typeof text !== 'string') return res.status(400).json({ error: 'text is required' });
+    const u = req.intercomClientUser!;
+    res.json(await postMessage(g.groupId!, { extension: u.extension, name: u.name }, text));
   } catch (err) { next(err); }
 });
 

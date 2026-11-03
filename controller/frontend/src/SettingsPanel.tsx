@@ -45,13 +45,14 @@ export default function SettingsPanel({ onError }: { onError: (msg: string) => v
         <input value={srsUri} placeholder="sip:srs@10.0.0.5:5060" onChange={e => setSrsUri(e.target.value)} />
       </div>
 
-      <h2>Group transcripts</h2>
+      <h2>Group transcripts and chat</h2>
       <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 10 }}>
-        Groups with "Transcribe" on (Groups page) are transcribed live per speaker. Lines older than
-        this are deleted automatically, hourly.
+        Groups with "Transcribe" on (Groups page) are transcribed live per speaker, and groups with
+        "Chat" on keep their typed messages. Transcript lines and chat messages older than this are
+        deleted automatically, hourly.
       </div>
       <div className="field">
-        <label>Keep transcripts for (days)</label>
+        <label>Keep transcripts and chat for (days)</label>
         <input type="number" min={1} max={3650} value={retentionDays}
           onChange={e => setRetentionDays(parseInt(e.target.value) || 1)} />
       </div>

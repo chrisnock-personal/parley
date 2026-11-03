@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, createContext, useContext } from 'react';
-import { api, Button, DirectoryEntry, GroupParticipant, IntercomClientSession, LiveState, TranscriptLine } from './api';
+import { api, Button, ChatMessage, DirectoryEntry, GroupParticipant, IntercomClientSession, LatestIds, LiveState, TranscriptLine } from './api';
 import { createIntercomClientUa, targetUri } from './sipUa';
 import { markSvg, PRODUCT_NAME } from '../../brand/mark';
 import { CallManager, SlotId, SlotState, SlotStates, ICM_SLOT, lineSlot, idleSlot, CallEventPayload } from './calls';
@@ -151,6 +151,7 @@ const ICON_PATHS: Record<string, string> = {
   micOff: 'M2 2l20 20 M18.89 13.23A7 7 0 0 0 19 12v-2 M5 10v2a7 7 0 0 0 12 5 M15 9.34V5a3 3 0 0 0-5.68-1.33 M9 9v3a3 3 0 0 0 5.12 2.12 M12 19v3',
   headset: 'M3 14v-3a9 9 0 0 1 18 0v3 M21 15a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2z M3 15a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z',
   search: 'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14 M21 21l-4.3-4.3',
+  keyboard: 'M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z M7 10h.01 M11 10h.01 M15 10h.01 M8 14h8',
 };
 function Icon({ name, size = 16 }: { name: keyof typeof ICON_PATHS; size?: number }) {
   return (
@@ -159,6 +160,48 @@ function Icon({ name, size = 16 }: { name: keyof typeof ICON_PATHS; size?: numbe
       {ICON_PATHS[name].split(' M').map((d, i) => <path key={i} d={i ? `M${d}` : d} />)}
     </svg>
   );
+}
+
+// BIGSERIAL ids arrive as digit strings; compare without Number overflow.
+function idGt(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a) return false;
+  if (!b) return true;
+  return a.length !== b.length ? a.length > b.length : a > b;
+}
+
+// The newest chat/transcript id per group this user has had on screen,
+// kept in this browser (a convenience: losing it only resets "new"). A
+// group seen for the first time starts at its current newest, so history
+// from before you ever looked isn't all flagged as new.
+type Seen = Record<string, Partial<LatestIds>>;
+function useSeen(ext: string | undefined, latest: Record<string, LatestIds>):
+  [Seen, (code: string, kind: keyof LatestIds, id: string) => void] {
+  const key = ext ? `parley-seen-${ext}` : null;
+  const [seen, setSeen] = useState<Seen>({});
+  useEffect(() => {
+    if (!key) return;
+    try { setSeen(JSON.parse(localStorage.getItem(key) || '{}')); } catch { setSeen({}); }
+  }, [key]);
+  const save = useCallback((next: Seen) => {
+    if (key) try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* private mode */ }
+    return next;
+  }, [key]);
+  useEffect(() => {
+    const fresh = Object.keys(latest).filter((code) => !seen[code]);
+    if (!key || !fresh.length) return;
+    setSeen((prev) => {
+      const next = { ...prev };
+      for (const code of fresh) if (!next[code]) next[code] = { chat: latest[code].chat ?? undefined, transcript: latest[code].transcript ?? undefined };
+      return save(next);
+    });
+  }, [latest, seen, key, save]);
+  const markSeen = useCallback((code: string, kind: keyof LatestIds, id: string) => {
+    setSeen((prev) => {
+      if (!idGt(id, prev[code]?.[kind])) return prev;
+      return save({ ...prev, [code]: { ...prev[code], [kind]: id } });
+    });
+  }, [save]);
+  return [seen, markSeen];
 }
 
 // The favourite toggle on a group's card and tile. Filled in the accent
@@ -289,12 +332,13 @@ function PersonCard({ person, anchor, online, talking, groups, keyButton, callab
 }
 
 // A titled, collapsible section of a group card -collapsed by default.
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, badge, children }: { title: string; badge?: React.ReactNode; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`card-section${open ? ' open' : ''}`}>
       <button className="card-section-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <span>{title}</span>
+        {badge}
         <span className="chevron"><Icon name="chevron" /></span>
       </button>
       {open && <div className="card-section-body">{children}</div>}
@@ -487,51 +531,189 @@ function IcmSection({ state, actions, keys, directory, lineUp, recording, online
   );
 }
 
-// A group's live transcript (backend transcriber, per speaker) as a chat
-// thread, readable whether or not you've joined. Polls for new lines every 2s
-// while open and stays pinned to the newest line unless you've scrolled up.
-function TranscriptPanel({ dialCode, selfExt }: { dialCode: string; selfExt: string }) {
+// A group's transcript (backend transcriber, per speaker) and typed chat,
+// whichever the group has switched on, as one timeline; readable (and chat
+// writable) whether or not you've joined. With both on, a filter narrows it
+// to Spoken or Typed. Polls every 2s while open and stays pinned to the
+// newest line unless you've scrolled up.
+function ConversationPanel({ dialCode, selfExt, transcribe, chat, onSeen, fill = false }: {
+  dialCode: string; selfExt: string; transcribe: boolean; chat: boolean;
+  onSeen: (kind: keyof LatestIds, id: string) => void;
+  fill?: boolean; // the phone sheet: take the whole height
+}) {
   const [lines, setLines] = useState<TranscriptLine[]>([]);
-  const lastId = useRef<string | undefined>(undefined);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [show, setShow] = useState<'all' | 'spoken' | 'typed'>('all');
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const lastLine = useRef<string | undefined>(undefined);
+  const lastMsg = useRef<string | undefined>(undefined);
   const box = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const seen = useRef(onSeen);
+  seen.current = onSeen;
+
+  const pollChat = useCallback(() => api.groupChat(dialCode, lastMsg.current)
+    .then((r) => {
+      if (!r.messages.length) return;
+      lastMsg.current = r.messages[r.messages.length - 1].id;
+      seen.current('chat', lastMsg.current);
+      // A message can come back twice (posted, then polled), so key by id.
+      setMessages((prev) => {
+        const have = new Set(prev.map((m) => m.id));
+        return [...prev, ...r.messages.filter((m) => !have.has(m.id))].slice(-200);
+      });
+    })
+    .catch(() => { /* keep what we have */ }), [dialCode]);
 
   useEffect(() => {
     let stopped = false;
-    const poll = () => api.groupTranscript(dialCode, lastId.current)
+    const pollLines = () => api.groupTranscript(dialCode, lastLine.current)
       .then((r) => {
         if (stopped || !r.lines.length) return;
-        lastId.current = r.lines[r.lines.length - 1].id;
+        lastLine.current = r.lines[r.lines.length - 1].id;
+        seen.current('transcript', lastLine.current);
         setLines((prev) => [...prev, ...r.lines].slice(-200));
       })
       .catch(() => { /* keep what we have */ });
+    const poll = () => {
+      if (transcribe) void pollLines();
+      if (chat && !stopped) void pollChat();
+    };
     poll();
     const t = window.setInterval(poll, 2000);
     return () => { stopped = true; window.clearInterval(t); };
-  }, [dialCode]);
+  }, [dialCode, transcribe, chat, pollChat]);
+
+  const both = transcribe && chat;
+  type Item = { key: string; at: number; ext: string; name: string; text: string; typed: boolean };
+  const items: Item[] = [
+    ...(show !== 'typed' ? lines.map((l) => ({
+      key: `t${l.id}`, at: Date.parse(l.spoken_at), ext: l.speaker_extension,
+      name: l.speaker_name || l.speaker_extension, text: l.text, typed: false })) : []),
+    ...(show !== 'spoken' ? messages.map((m) => ({
+      key: `c${m.id}`, at: Date.parse(m.created_at), ext: m.author_extension,
+      name: m.author_name || m.author_extension, text: m.body, typed: true })) : []),
+  ].sort((a, b) => a.at - b.at);
 
   useLayoutEffect(() => {
     if (pinned.current && box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [lines]);
+  }, [items.length, show]);
 
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      await api.postChat(dialCode, text);
+      setDraft('');
+      pinned.current = true;
+      await pollChat();
+    } catch (err) {
+      setSendError((err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const empty = show === 'typed' || !transcribe ? 'No messages yet.' : show === 'spoken' || !chat ? 'Nothing said yet.' : 'Nothing said or typed yet.';
   return (
-    <div className="transcript" ref={box}
-      onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24; }}>
-      {lines.length === 0 && <div className="transcript-empty">Nothing said yet.</div>}
-      {lines.map((l) => {
-        const name = l.speaker_name || l.speaker_extension;
-        return (
-          <div key={l.id} className={`chat-line${l.speaker_extension === selfExt ? ' self' : ''}`}>
-            <Avatar name={name} id={l.speaker_extension} size={24} openable />
-            <div className="chat-bubble">
+    <div className={`convo${fill ? ' fill' : ''}`}>
+      {both && (
+        <div className="convo-filter" role="group" aria-label="Show">
+          {(['all', 'spoken', 'typed'] as const).map((k) => (
+            <button key={k} className={show === k ? 'on' : ''} aria-pressed={show === k} onClick={() => setShow(k)}>
+              {k === 'all' ? 'Everything' : k === 'spoken' ? 'Spoken' : 'Typed'}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="transcript" ref={box}
+        onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24; }}>
+        {items.length === 0 && <div className="transcript-empty">{empty}</div>}
+        {items.map((it) => (
+          <div key={it.key} className={`chat-line${it.ext === selfExt ? ' self' : ''}`}>
+            <Avatar name={it.name} id={it.ext} size={24} openable />
+            <div className={`chat-bubble${it.typed ? ' typed' : ''}`}>
               <div className="chat-meta">
-                {name}{l.speaker_extension === selfExt ? ' (you)' : ''} · {new Date(l.spoken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                {it.name}{it.ext === selfExt ? ' (you)' : ''} · {new Date(it.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                {both && <> · <Icon name={it.typed ? 'keyboard' : 'mic'} size={11} /> {it.typed ? 'typed' : 'said'}</>}
               </div>
-              {l.text}
+              {it.text}
             </div>
           </div>
-        );
-      })}
+        ))}
+      </div>
+      {chat && (
+        <form className="convo-composer" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+          <label className="sr-only" htmlFor={`chat-${dialCode}`}>Message the group</label>
+          <input id={`chat-${dialCode}`} type="text" value={draft} maxLength={1000} placeholder="Message the group"
+            autoComplete="off" onChange={(e) => setDraft(e.target.value)} />
+          <button type="submit" className="convo-send" disabled={!draft.trim() || sending}>Send</button>
+        </form>
+      )}
+      {sendError && <div className="convo-error">Not sent: {sendError}</div>}
+    </div>
+  );
+}
+
+// The phone layout (the client's 600px breakpoint).
+function useNarrow(): boolean {
+  const q = '(max-width: 600px)';
+  const [narrow, setNarrow] = useState(() => window.matchMedia(q).matches);
+  useEffect(() => {
+    const m = window.matchMedia(q);
+    const on = () => setNarrow(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  return narrow;
+}
+
+// A group's transcript and/or chat, whichever it has switched on: a
+// collapsible section in the card, or on a phone a full-screen sheet.
+function ConversationSection({ button, selfExt, hasNew, onSeen }: {
+  button: Button; selfExt: string; hasNew: boolean; onSeen: (kind: keyof LatestIds, id: string) => void;
+}) {
+  const transcribe = !!button.target_group_transcribe_enabled;
+  const chat = !!button.target_group_chat_enabled;
+  const title = transcribe && chat ? 'Conversation' : chat ? 'Chat' : 'Transcript';
+  const narrow = useNarrow();
+  const [sheet, setSheet] = useState(false);
+  useEffect(() => {
+    if (!sheet) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSheet(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sheet]);
+  const panel = (fill: boolean) => (
+    <ConversationPanel dialCode={button.target_group_dial_code!} selfExt={selfExt}
+      transcribe={transcribe} chat={chat} onSeen={onSeen} fill={fill} />
+  );
+  const badge = hasNew ? <span className="new-badge">new</span> : null;
+  if (!narrow) return <Section title={title} badge={badge}>{panel(false)}</Section>;
+  return (
+    <div className="card-section">
+      <button className="card-section-head" onClick={() => setSheet(true)}>
+        <span>{title}</span>{badge}
+        <span className="chevron open-right"><Icon name="chevron" /></span>
+      </button>
+      {sheet && (
+        <div className="convo-sheet" role="dialog" aria-modal="true" aria-label={`${buttonLabel(button)} ${title.toLowerCase()}`}>
+          <div className="convo-sheet-head">
+            <button className="icon-btn" onClick={() => setSheet(false)} aria-label="Back to groups">
+              <span className="back-chevron"><Icon name="chevron" size={20} /></span>
+            </button>
+            <div className="convo-sheet-title">
+              <div className="card-name-text">{buttonLabel(button)}</div>
+              <div className="card-sub">{title}</div>
+            </div>
+          </div>
+          {panel(true)}
+        </div>
+      )}
     </div>
   );
 }
@@ -541,9 +723,10 @@ function TranscriptPanel({ dialCode, selfExt }: { dialCode: string; selfExt: str
 // To Talk. Then collapsible Participants and (for transcribed groups)
 // Transcript, and Join / Leave at the bottom.
 const STACK_MAX = 4;
-function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, onToggleJoin, onToggleFavourite, onCollapse }: {
+function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, hasNew, onSeen, onToggleJoin, onToggleFavourite, onCollapse }: {
   button: Button; state: SlotState; actions: SlotActions; lineUp: boolean; recording: boolean;
   participants: GroupParticipant[] | undefined; selfExt: string; onToggleJoin: () => void;
+  hasNew: boolean; onSeen: (kind: keyof LatestIds, id: string) => void;
   onToggleFavourite: () => void;
   onCollapse?: () => void; // an unjoined group opened from its tile: shrink it back
 }) {
@@ -574,6 +757,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
           <div className="card-sub">
             {recording && <RecTag title="Someone in this group is being recorded, so the group's audio is recorded" />}
             {button.target_group_transcribe_enabled && <span className="info-tag" title="Speech in this group is transcribed and kept">Transcribed</span>}
+            {button.target_group_chat_enabled && <span className="info-tag" title="This group has a typed chat">Chat</span>}
             <span>
               {GROUP_PREFIX}{button.target_group_dial_code} · {mode} · {joined ? (live ? 'joined' : state.status) : 'not joined'}
               {state.onHold ? ' · on hold' : ''}
@@ -642,10 +826,8 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
         </Section>
       )}
 
-      {button.target_group_transcribe_enabled && (
-        <Section title="Transcript">
-          <TranscriptPanel dialCode={button.target_group_dial_code!} selfExt={selfExt} />
-        </Section>
+      {(button.target_group_transcribe_enabled || button.target_group_chat_enabled) && (
+        <ConversationSection button={button} selfExt={selfExt} hasNew={hasNew} onSeen={onSeen} />
       )}
 
       <button className={joined ? 'card-leave' : 'card-join'} disabled={!joined && !lineUp} onClick={onToggleJoin}>
@@ -658,8 +840,8 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
 // A group you haven't joined, as a small tile: who's in it, whether anyone
 // is talking, its tags, and Join. Clicking the tile (not Join) opens the
 // full card, for its participants and transcript.
-function GroupTile({ button, participants, recording, lineUp, onJoin, onOpen, onToggleFavourite }: {
-  button: Button; participants: GroupParticipant[] | undefined; recording: boolean; lineUp: boolean;
+function GroupTile({ button, participants, recording, lineUp, hasNew, onJoin, onOpen, onToggleFavourite }: {
+  button: Button; participants: GroupParticipant[] | undefined; recording: boolean; lineUp: boolean; hasNew: boolean;
   onJoin: () => void; onOpen: () => void; onToggleFavourite: () => void;
 }) {
   const people = [...(participants ?? [])].sort((x, y) => Number(y.talking) - Number(x.talking));
@@ -684,6 +866,8 @@ function GroupTile({ button, participants, recording, lineUp, onJoin, onOpen, on
             : <span className="nobody">nobody here</span>}
           {recording && <RecTag title="Someone in this group is being recorded, so the group's audio is recorded" />}
           {button.target_group_transcribe_enabled && <span className="info-tag">Transcribed</span>}
+          {button.target_group_chat_enabled && <span className="info-tag">Chat</span>}
+          {hasNew && <span className="new-badge" title="New messages or transcript lines">new</span>}
         </span>
       </button>
       <StarButton name={name} on={button.favourite} onToggle={onToggleFavourite} />
@@ -848,6 +1032,10 @@ export default function App() {
   // call list), so a group shows who's in it even if you haven't joined.
   const [participants, setParticipants] = useState<Record<string, GroupParticipant[]> | null>(null);
   // Who's online and what's being recorded, from the same poll.
+  // Newest chat/transcript ids per group (from the 1s poll) against the
+  // newest this user has had on screen, for the "new" markers.
+  const [latest, setLatest] = useState<Record<string, LatestIds>>({});
+  const [seen, markSeen] = useSeen(session?.extension, latest);
   const [live, setLive] = useState<Pick<LiveState, 'online' | 'recording' | 'avatars'>>({ online: [], recording: { self: false, icm: false, groups: [] }, avatars: {} });
   const [pollTick, setPollTick] = useState(0); // bump to poll right away (e.g. after changing your photo)
   const [card, setCard] = useState<{ person: { extension: string; name: string }; anchor: DOMRect } | null>(null);
@@ -893,6 +1081,7 @@ export default function App() {
         if (stopped) return;
         setParticipants(r.participants);
         setLive({ online: r.online, recording: r.recording, avatars: r.avatars ?? {} });
+        setLatest(r.latest ?? {});
       })
       .catch(() => { /* keep last known */ });
     poll();
@@ -1116,6 +1305,13 @@ export default function App() {
     if (open) next.add(code); else next.delete(code);
     return next;
   });
+  const hasNew = (b: Button) => {
+    const code = b.target_group_dial_code!;
+    const l = latest[code], s = seen[code];
+    if (!l || !s) return false;
+    return (!!b.target_group_chat_enabled && idGt(l.chat, s.chat))
+      || (!!b.target_group_transcribe_enabled && idGt(l.transcript, s.transcript));
+  };
   // Star / unstar, shown at once and saved in the background; a failed save
   // puts it back. Unstarring also clears "opened", so it drops to a tile.
   const setFavourite = (b: Button, favourite: boolean) => {
@@ -1246,6 +1442,7 @@ export default function App() {
                   <GroupStrip key={b.id} button={b} state={state}
                     actions={actions} lineUp={lineUp} participants={participants?.[b.target_group_dial_code!]}
                     selfExt={session.extension} recording={live.recording.groups.includes(b.target_group_dial_code!)}
+                    hasNew={hasNew(b)} onSeen={(kind, id) => markSeen(b.target_group_dial_code!, kind, id)}
                     onToggleJoin={() => joinOrLeave(b)}
                     onToggleFavourite={() => setFavourite(b, !b.favourite)}
                     onCollapse={state.status === 'idle' && !b.favourite ? () => setOpenGroup(b.target_group_dial_code!, false) : undefined} />
@@ -1260,6 +1457,7 @@ export default function App() {
                 {tileGroups.map((b) => (
                   <GroupTile key={b.id} button={b} participants={participants?.[b.target_group_dial_code!]}
                     recording={live.recording.groups.includes(b.target_group_dial_code!)} lineUp={lineUp}
+                    hasNew={hasNew(b)}
                     onJoin={() => joinOrLeave(b)} onOpen={() => setOpenGroup(b.target_group_dial_code!, true)}
                     onToggleFavourite={() => setFavourite(b, true)} />
                 ))}

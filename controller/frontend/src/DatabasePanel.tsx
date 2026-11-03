@@ -118,6 +118,7 @@ export default function DatabasePanel({ onError }: { onError: (msg: string) => v
           <option value="audit_log">audit_log</option>
           <option value="intercom_sessions">intercom_sessions (never touches active calls)</option>
           <option value="intercom_transcript_lines">intercom_transcript_lines (also pruned automatically -see Settings)</option>
+          <option value="intercom_chat_messages">intercom_chat_messages (also pruned automatically -see Settings)</option>
         </select>
       </div>
       <div className="field">

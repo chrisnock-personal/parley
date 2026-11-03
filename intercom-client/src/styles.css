@@ -478,3 +478,39 @@ input[type=checkbox] { accent-color: var(--accent); }
 .tile-top { display: flex; align-items: flex-start; gap: 4px; min-width: 0; }
 .tile-top .tile-open { flex: 1; min-width: 0; }
 .tile-top .star-btn { width: 40px; height: 40px; margin: -10px -8px -8px 0; }
+
+/* ---- Group conversation: transcript + chat (migration 016) ---- */
+.new-badge {
+  font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  padding: 1px 7px; border-radius: 999px; background: var(--accent); color: var(--bg);
+}
+.convo { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.convo-filter {
+  display: inline-flex; align-self: flex-start; gap: 2px; padding: 3px; border-radius: calc(var(--r-btn) + 1px);
+  background: var(--surface-3); border: 1px solid var(--line);
+}
+.convo-filter button {
+  border: none; background: none; color: var(--dim); font-size: 12px; font-weight: 600;
+  padding: 6px 12px; border-radius: var(--r-btn); min-height: 32px;
+}
+.convo-filter button.on { background: var(--surface-2); color: var(--text); }
+.chat-bubble.typed { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-2); }
+.chat-line.self .chat-bubble.typed { box-shadow: inset 0 0 0 1px var(--accent); }
+.chat-meta svg { vertical-align: -1px; }
+.convo-composer { display: flex; gap: 8px; }
+.convo-composer input { flex: 1; min-width: 0; height: 44px; box-sizing: border-box; font-size: 14px; }
+.convo-send { height: 44px; padding: 0 16px; font-weight: 700; background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.convo-error { font-size: 12px; color: var(--danger); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.chevron.open-right { transform: rotate(-90deg); }
+/* Phone: the conversation takes the whole screen. */
+.convo-sheet {
+  position: fixed; inset: 0; z-index: 50; background: var(--bg);
+  display: flex; flex-direction: column; padding: 0 12px 16px;
+}
+.convo-sheet-head { display: flex; align-items: center; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.convo-sheet-head .icon-btn { width: 44px; height: 44px; }
+.back-chevron { display: inline-flex; transform: rotate(90deg); }
+.convo-sheet-title { min-width: 0; font-weight: 600; }
+.convo.fill { flex: 1; }
+.convo.fill .transcript { flex: 1; max-height: none; }

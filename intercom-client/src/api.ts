@@ -11,6 +11,7 @@ export interface Button {
   target_group_dial_code: string | null;
   target_group_ptt_default: boolean | null;
   target_group_transcribe_enabled: boolean | null;
+  target_group_chat_enabled: boolean | null; // group has chat on
   target_name: string | null; // direct buttons: who that extension belongs to
   label: string | null;
   sort_order: number;
@@ -25,11 +26,23 @@ export interface TranscriptLine {
   spoken_at: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  author_extension: string;
+  author_name: string | null;
+  body: string;
+  created_at: string;
+}
+
+// Newest chat message / transcript line id in a group, for "new" markers.
+export interface LatestIds { chat: string | null; transcript: string | null }
+
 // What the client polls every second (GET /groups/participants).
 export interface LiveState {
   participants: Record<string, GroupParticipant[]>; // dial code -> who's in it
   online: string[];                                  // registered extensions
   avatars: Record<string, number>;                   // extension -> photo version, for people with a photo
+  latest?: Record<string, LatestIds>;                // dial code -> newest chat/transcript ids
   recording: {
     self: boolean;     // this user's calls are recorded (policy: their switch + a recording server)
     icm: boolean;      // their current direct call is being recorded right now
@@ -97,6 +110,14 @@ export const api = {
   // A group's live transcript; `after` = last line id seen, for polling.
   groupTranscript(dialCode: string, after?: string): Promise<{ transcribing: boolean; lines: TranscriptLine[] }> {
     return req(`/groups/${encodeURIComponent(dialCode)}/transcript${after ? `?after=${after}` : ''}`);
+  },
+
+  // A group's chat; `after` = last message id seen, for polling.
+  groupChat(dialCode: string, after?: string): Promise<{ messages: ChatMessage[] }> {
+    return req(`/groups/${encodeURIComponent(dialCode)}/chat${after ? `?after=${after}` : ''}`);
+  },
+  postChat(dialCode: string, text: string): Promise<ChatMessage> {
+    return req(`/groups/${encodeURIComponent(dialCode)}/chat`, { method: 'POST', body: JSON.stringify({ text }) });
   },
 
   // Everyone you could call (the "All" tab), excluding yourself.

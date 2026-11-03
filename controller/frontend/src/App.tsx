@@ -159,6 +159,7 @@ function GroupsPanel({
   const [editMode, setEditMode] = useState<'talkback' | 'announce'>('talkback');
   const [editPttDefault, setEditPttDefault] = useState(false);
   const [editTranscribe, setEditTranscribe] = useState(false);
+  const [editChat, setEditChat] = useState(false);
 
   const refreshGroups = useCallback(async () => {
     try { setGroups(await api.listGroups()); } catch (err) { onError((err as Error).message); }
@@ -177,6 +178,7 @@ function GroupsPanel({
       setEditMode(g.mode);
       setEditPttDefault(g.ptt_default);
       setEditTranscribe(g.transcribe_enabled);
+      setEditChat(g.chat_enabled);
     }
   }, [selected, groups]);
 
@@ -215,7 +217,7 @@ function GroupsPanel({
     if (!selected) return;
     setBusy(true);
     try {
-      await api.updateGroup(selected, { name: editName.trim(), mode: editMode, ptt_default: editPttDefault, transcribe_enabled: editTranscribe });
+      await api.updateGroup(selected, { name: editName.trim(), mode: editMode, ptt_default: editPttDefault, transcribe_enabled: editTranscribe, chat_enabled: editChat });
       await refreshGroups();
     } catch (err) { onError((err as Error).message); }
     finally { setBusy(false); }
@@ -294,6 +296,10 @@ function GroupsPanel({
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, margin: '8px 0' }}>
                 <input type="checkbox" checked={editTranscribe} onChange={e => setEditTranscribe(e.target.checked)} />
                 Transcribe (live, per speaker -anyone with this group can read it without joining)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, margin: '8px 0' }}>
+                <input type="checkbox" checked={editChat} onChange={e => setEditChat(e.target.checked)} />
+                Chat (typed messages -anyone with this group can read and post without joining; shown with the transcript when both are on)
               </label>
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 <button className="ghost" disabled={busy || !editName.trim()} onClick={saveGroup}>Save changes</button>
