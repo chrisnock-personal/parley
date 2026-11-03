@@ -363,6 +363,33 @@ taking the overview screenshots:
   tables and logs on one long page.
 - Same look as the client (themes, cards) rather than its own older style.
 
+**Read chat messages aloud (mock and think through first)**
+Optional text-to-voice for incoming chat messages, switched on or off in
+the client per group (Chris, 2026-11-03). Questions to settle:
+- **Where the voice comes from.** The browser's own `speechSynthesis` is
+  free, needs no server and works on iPads, but voices differ by device.
+  Server-side Piper (already used by CallRaven) sounds the same everywhere
+  but needs an endpoint and audio delivery. Either way it's played only to
+  this listener, not into the group (reading a message out to everyone
+  would be a different feature).
+- **Which messages.** Probably not your own, and only for groups you've
+  joined, or also for favourites you're watching? Say who sent it
+  ("Producer: guest two is in make-up")?
+- **Clashing with live audio.** Queue messages rather than overlap them;
+  duck that group's (or all groups') audio while one is read; drop or
+  summarise a backlog after a burst; maybe skip while you're holding
+  push-to-talk.
+- **Echo.** On open mic with speakers, the read-out could go back into
+  your microphone, into the group and its transcript. Check browser echo
+  cancellation covers synthesised audio, or mute the mic while reading.
+- **Where the setting lives.** Per device (localStorage: a desk on
+  speakers may want it, the same person on a headset may not) or per
+  person on the server like favourites. Plus voice, rate and volume, and
+  the browser's autoplay rule (turning it on is the user gesture that
+  unlocks speech).
+- **UI.** A speaker toggle on the card's Conversation header, and a sign
+  on the card that it's on.
+
 **Client UI (mock first)**
 - **Keyboard hotkeys** (from Eyevinn), if wanted: per-group push-to-talk
   and mute, answer/hang up the intercom, a global mute. Mainly for desk
