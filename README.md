@@ -363,32 +363,31 @@ taking the overview screenshots:
   tables and logs on one long page.
 - Same look as the client (themes, cards) rather than its own older style.
 
-**Read chat messages aloud (mock and think through first)**
-Optional text-to-voice for incoming chat messages, switched on or off in
-the client per group (Chris, 2026-11-03). Questions to settle:
-- **Where the voice comes from.** The browser's own `speechSynthesis` is
-  free, needs no server and works on iPads, but voices differ by device.
-  Server-side Piper (already used by CallRaven) sounds the same everywhere
-  but needs an endpoint and audio delivery. Either way it's played only to
-  this listener, not into the group (reading a message out to everyone
-  would be a different feature).
-- **Which messages.** Probably not your own, and only for groups you've
-  joined, or also for favourites you're watching? Say who sent it
-  ("Producer: guest two is in make-up")?
-- **Clashing with live audio.** Queue messages rather than overlap them;
-  duck that group's (or all groups') audio while one is read; drop or
-  summarise a backlog after a burst; maybe skip while you're holding
-  push-to-talk.
-- **Echo.** On open mic with speakers, the read-out could go back into
-  your microphone, into the group and its transcript. Check browser echo
-  cancellation covers synthesised audio, or mute the mic while reading.
-- **Where the setting lives.** Per device (localStorage: a desk on
-  speakers may want it, the same person on a headset may not) or per
-  person on the server like favourites. Plus voice, rate and volume, and
-  the browser's autoplay rule (turning it on is the user gesture that
-  unlocks speech).
-- **UI.** A speaker toggle on the card's Conversation header, and a sign
-  on the card that it's on.
+**Read chat messages aloud (mocked; decisions made)**
+Optional text-to-voice for incoming chat messages, switched on per group
+in the client (Chris, 2026-11-03). Mocked on the "Parley Read Aloud"
+design canvas: a Read aloud toggle on the group's Conversation header, a
+"Read aloud" tag on the card while it's on, settings (voice, speed,
+volume, say who sent it, turn group audio down while reading, wait while
+I'm talking, say which group) in the profile menu, and a speaker button in
+the phone's conversation sheet. Decided:
+- **Only joined groups, and only where it's switched on.** The toggle can
+  be set on any group, but messages are read only while you're in it.
+  Never your own messages.
+- **The setting follows the person**, stored on the server per group
+  button like favourites, not per device.
+- **Voice:** start with the browser's own `speechSynthesis` (no server,
+  works on iPads; voices differ by device). Server-side Piper later if a
+  consistent voice matters. Played to this listener only, never into the
+  group.
+- **Clashes:** queue messages rather than overlap them, turn that group's
+  audio down while one is read, and hold them while you're holding Push To
+  Talk; Skip and Stop while a queue is waiting.
+Still to settle: **echo.** On open mic with speakers the read-out could go
+back into the mic, into the group and its transcript. The browser's echo
+cancellation may not cover OS speech synthesis; test on real devices, and
+if needed mute the mic while reading on open mic, or play server-made audio
+through the page so echo cancellation can see it.
 
 **Client UI (mock first)**
 - **Keyboard hotkeys** (from Eyevinn), if wanted: per-group push-to-talk
