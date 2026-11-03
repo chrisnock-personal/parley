@@ -345,25 +345,9 @@ canvas). Its 48x48 drawing:
 ## Roadmap
 Each item needs mocking or working through before it's built.
 
-**Admin console rework (mock first)**
-The console works but isn't user friendly (Chris, 2026-11-03). Seen while
-taking the overview screenshots:
-- Groups and Directory Users are one long form each: a "create" form at
-  the top, then a dropdown to pick the item to edit. A list or table of
-  groups and people (with their extension, mode, Transcribe/Chat/Record
-  flags) that you click into would be easier to scan and edit.
-- A person's keys show as bare arrows and extensions ("→ 2001") with no
-  names, and the help text still talks about "Handset A/B/Speaker" from
-  the turret days.
-- A group page ends in a "Start" button and member checkboxes left over
-  from the old endpoint-driven group calls, which mean nothing for browser
-  users.
-- Settings, Health, Audit and Database are serviceable, but Audit can only be
-  filtered by entity type and actor (no dates or actions), and Health mixes host stats,
-  tables and logs on one long page.
-- Same look as the client (themes, cards) rather than its own older style.
+**Admin console rework**: done 2026-11-03 (commit 0134e69).
 
-**Read chat messages aloud (mocked; decisions made)**
+**Read chat messages aloud (built 2026-11-03; still to try on a real device)**
 Optional text-to-voice for incoming chat messages, switched on per group
 in the client (Chris, 2026-11-03). Mocked on the "Parley Read Aloud"
 design canvas: a Read aloud toggle on the group's Conversation header, a
@@ -383,7 +367,7 @@ the phone's conversation sheet. Decided:
 - **Clashes:** queue messages rather than overlap them, turn that group's
   audio down while one is read, and hold them while you're holding Push To
   Talk; Skip and Stop while a queue is waiting.
-Still to settle: **echo.** On open mic with speakers the read-out could go
+Built as above (commit aad90b9); tested with speech stubbed. Still to check on a real device: **echo.** On open mic with speakers the read-out could go
 back into the mic, into the group and its transcript. The browser's echo
 cancellation may not cover OS speech synthesis; test on real devices, and
 if needed mute the mic while reading on open mic, or play server-made audio
@@ -419,6 +403,20 @@ Questions:
   transcripts/chat by group, person, date and words, and export a range.
 - **Summaries.** An AI summary per group per shift, using the shared
   Ollama, kept after the lines themselves are culled.
+
+**Known bugs (found 2026-11-03, not fixed)**
+- **Transcriber drops the start of an utterance.** The first word or so is
+  sometimes lost ("Standby everyone" -> "and by everyone", "Okay" -> "K"),
+  and once a whole short line from a synthetic voice was dropped. Likely
+  the segmenter starting a segment late (or the music/pitch filter on a
+  monotone voice); reproduce with the overview's Piper lines.
+- **Group card headers get cramped.** With REC, Transcribed and Chat tags,
+  a call timer, four avatars and the star, the status line wraps to three
+  lines on a 400 px card (visible in the overview's hero screenshot).
+- **Backups archive ignores "older than N days".** `POST /admin/db/archive`
+  dumps `audit_log` and `intercom_sessions` whole; `days` only ends up in
+  the file name. It also doesn't include transcripts or chat (see the
+  retention item above).
 
 **Client UI (mock first)**
 - **Keyboard hotkeys** (from Eyevinn), if wanted: per-group push-to-talk
