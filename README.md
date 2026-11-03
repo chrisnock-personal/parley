@@ -345,6 +345,24 @@ canvas). Its 48x48 drawing:
 ## Roadmap
 Each item needs mocking or working through before it's built.
 
+**Admin console rework (mock first)**
+The console works but isn't user friendly (Chris, 2026-11-03). Seen while
+taking the overview screenshots:
+- Groups and Directory Users are one long form each: a "create" form at
+  the top, then a dropdown to pick the item to edit. A list or table of
+  groups and people (with their extension, mode, Transcribe/Chat/Record
+  flags) that you click into would be easier to scan and edit.
+- A person's keys show as bare arrows and extensions ("→ 2001") with no
+  names, and the help text still talks about "Handset A/B/Speaker" from
+  the turret days.
+- A group page ends in a "Start" button and member checkboxes left over
+  from the old endpoint-driven group calls, which mean nothing for browser
+  users.
+- Settings, Health, Audit and Database are serviceable, but Audit can only be
+  filtered by entity type and actor (no dates or actions), and Health mixes host stats,
+  tables and logs on one long page.
+- Same look as the client (themes, cards) rather than its own older style.
+
 **Client UI (mock first)**
 - **Keyboard hotkeys** (from Eyevinn), if wanted: per-group push-to-talk
   and mute, answer/hang up the intercom, a global mute. Mainly for desk

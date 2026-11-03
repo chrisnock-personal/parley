@@ -150,7 +150,9 @@ services:
       DRACHTIO_HOST:   "127.0.0.1"
       DRACHTIO_PORT:   "9022"
       DRACHTIO_SECRET: ${DRACHTIO_SECRET:-cymru}
-      RTPENGINE_HOST:  "127.0.0.1"
+      # rtpengine's control address; see images/rtpengine/entrypoint.sh
+      # (set RTPENGINE_NG_HOST=10.255.255.254 under WSL2 mirrored networking).
+      RTPENGINE_HOST:  ${RTPENGINE_NG_HOST:-127.0.0.1}
       RTPENGINE_PORT:  "22222"
       GROUP_PREFIX:    "*8"
       # FreeSWITCH's "intercom" sip_profile binds sip-ip/rtp-ip to
@@ -194,6 +196,7 @@ services:
     network_mode: host   # anchors media on the host's routed interface
     environment:
       RTPENGINE_PUBLIC_IP: ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
+      RTPENGINE_NG_HOST:   ${RTPENGINE_NG_HOST:-127.0.0.1}
       RTPENGINE_NG_PORT:   "22222"
       RTPENGINE_PORT_MIN:  "30000"
       RTPENGINE_PORT_MAX:  "40000"
@@ -241,7 +244,7 @@ services:
     network_mode: host   # receives RTP from rtpengine on local ports; reaches pbx-core/rtpengine/whisper on this host
     environment:
       PBX_STATUS_URL: "http://127.0.0.1:9080/status"
-      RTPENGINE_HOST: "127.0.0.1"
+      RTPENGINE_HOST: ${RTPENGINE_NG_HOST:-127.0.0.1}
       RTPENGINE_PORT: "22222"
       MEDIA_IP:       ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
       WHISPER_URL:    ${WHISPER_URL:-http://127.0.0.1:8090}
