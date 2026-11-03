@@ -75,6 +75,20 @@ export async function listDirectoryUsers(): Promise<DirectoryUser[]> {
   return rows;
 }
 
+/** The console's People list: each person plus how many group and
+ * intercom-key buttons they have. */
+export async function listDirectoryUsersSummary(): Promise<(DirectoryUser & { group_count: number; key_count: number })[]> {
+  const { rows } = await query<DirectoryUser & { group_count: number; key_count: number }>(
+    `SELECT u.id, u.name, u.extension, u.enabled, u.siprec_enabled, u.created_at, u.updated_at,
+            COUNT(b.id) FILTER (WHERE b.button_type = 'group')::int  AS group_count,
+            COUNT(b.id) FILTER (WHERE b.button_type = 'direct')::int AS key_count
+       FROM intercom_directory_users u
+       LEFT JOIN intercom_directory_user_buttons b ON b.directory_user_id = u.id
+      GROUP BY u.id
+      ORDER BY u.name`);
+  return rows;
+}
+
 export async function getDirectoryUser(id: string): Promise<DirectoryUser> {
   const u = await queryOne<DirectoryUser>(
     `SELECT ${PUBLIC_COLUMNS} FROM intercom_directory_users WHERE id = $1`, [id]);

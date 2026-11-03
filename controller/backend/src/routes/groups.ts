@@ -8,7 +8,13 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/', async (_req, res, next) => {
-  try { res.json(await groups.listGroups()); } catch (err) { next(err); }
+  try { res.json(await groups.listGroupsSummary()); } catch (err) { next(err); }
+});
+
+// Who has this group on their intercom client. Adding or removing someone
+// goes through their own buttons (POST/DELETE /directory-users/:id/buttons).
+router.get('/:id/holders', async (req, res, next) => {
+  try { res.json(await groups.listGroupHolders(req.params.id)); } catch (err) { next(err); }
 });
 
 router.post('/', requireRole('admin', 'editor'), async (req, res, next) => {

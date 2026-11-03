@@ -34,6 +34,30 @@ export async function listGroups(): Promise<Group[]> {
   return rows;
 }
 
+/** The console's Groups list: each group plus how many people have a
+ * button for it. */
+export async function listGroupsSummary(): Promise<(Group & { holder_count: number })[]> {
+  const { rows } = await query<Group & { holder_count: number }>(
+    `SELECT g.*, COUNT(b.id)::int AS holder_count
+       FROM intercom_groups g
+       LEFT JOIN intercom_directory_user_buttons b ON b.target_group_id = g.id
+      GROUP BY g.id
+      ORDER BY g.name`);
+  return rows;
+}
+
+/** Who has a button for this group (so it's on their intercom client). */
+export async function listGroupHolders(groupId: string): Promise<{ button_id: string; user_id: string; name: string; extension: string }[]> {
+  await getGroup(groupId);
+  const { rows } = await query<{ button_id: string; user_id: string; name: string; extension: string }>(
+    `SELECT b.id AS button_id, u.id AS user_id, u.name, u.extension
+       FROM intercom_directory_user_buttons b
+       JOIN intercom_directory_users u ON u.id = b.directory_user_id
+      WHERE b.target_group_id = $1
+      ORDER BY u.name`, [groupId]);
+  return rows;
+}
+
 export async function getGroup(id: string): Promise<Group> {
   const g = await queryOne<Group>(`SELECT * FROM intercom_groups WHERE id = $1`, [id]);
   if (!g) throw createError('Group not found', 404);

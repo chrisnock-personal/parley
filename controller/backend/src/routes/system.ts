@@ -171,28 +171,49 @@ router.get('/audit', async (req: Request, res: Response, next: NextFunction) => 
     const offset = parseInt(req.query.offset as string || '0');
     const entity = req.query.entity_type as string | undefined;
     const actor  = req.query.actor as string | undefined;
+    const from   = req.query.from as string | undefined;   // ISO date/time
+    const to     = req.query.to as string | undefined;
+    const kind   = req.query.kind as string | undefined;   // calls | signins | changes | deletions
+    const KINDS: Record<string, string[]> = {
+      calls: ['call_start', 'call_end', 'page', 'group_join', 'group_leave'],
+      signins: ['login', 'logout'],
+      changes: ['create', 'update', 'ptt_grant', 'ptt_release'],
+      deletions: ['delete'],
+    };
 
     const conditions: string[] = [];
     const values: unknown[] = [];
     let i = 1;
 
-    if (entity) { conditions.push(`entity_type = $${i++}`); values.push(entity); }
-    if (actor)  { conditions.push(`actor ILIKE $${i++}`);   values.push(`%${actor}%`); }
+    if (entity) { conditions.push(`a.entity_type = $${i++}`); values.push(entity); }
+    // Who: the actor as recorded (an email or an extension) or, for
+    // intercom-client users, their name.
+    if (actor)  { conditions.push(`(a.actor ILIKE $${i} OR du.name ILIKE $${i})`); i++; values.push(`%${actor}%`); }
+    if (from && !isNaN(Date.parse(from))) { conditions.push(`a.event_time >= $${i++}`); values.push(new Date(from)); }
+    if (to && !isNaN(Date.parse(to)))     { conditions.push(`a.event_time < $${i++}`);  values.push(new Date(to)); }
+    if (kind && KINDS[kind]) { conditions.push(`a.action = ANY($${i++})`); values.push(KINDS[kind]); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    // Names for the console: the actor's (an intercom-client user, by
+    // extension) and the entity's (a person or a group, by id).
+    const joins = `
+       LEFT JOIN intercom_directory_users du ON du.extension = a.actor
+       LEFT JOIN intercom_directory_users eu ON a.entity_type = 'directory_user' AND eu.id::text = a.entity_id::text
+       LEFT JOIN intercom_groups eg ON a.entity_type = 'group' AND eg.id::text = a.entity_id::text`;
 
     const { rows } = await query(
-      `SELECT id, event_time, actor, entity_type, entity_id, action,
-              before_state, after_state, metadata, source_ip
-       FROM audit_log
+      `SELECT a.id, a.event_time, a.actor, a.entity_type, a.entity_id, a.action,
+              a.before_state, a.after_state, a.metadata, a.source_ip,
+              du.name AS actor_name, COALESCE(eu.name, eg.name) AS entity_name
+       FROM audit_log a ${joins}
        ${where}
-       ORDER BY event_time DESC
+       ORDER BY a.event_time DESC
        LIMIT $${i++} OFFSET $${i++}`,
       [...values, limit, offset]
     );
 
     const { rows: [{ count }] } = await query<{ count: string }>(
-      `SELECT COUNT(*) FROM audit_log ${where}`,
+      `SELECT COUNT(*) FROM audit_log a ${joins} ${where}`,
       values
     );
 

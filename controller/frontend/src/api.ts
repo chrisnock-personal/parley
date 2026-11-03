@@ -41,7 +41,10 @@ export interface Group {
   dial_code: string;
   transcribe_enabled: boolean;
   chat_enabled: boolean;
+  holder_count?: number; // people with a button for it (list only)
 }
+
+export interface GroupHolder { button_id: string; user_id: string; name: string; extension: string }
 
 export interface GroupMember {
   id: string;
@@ -67,6 +70,8 @@ export interface DirectoryUser {
   extension: string;
   enabled: boolean;
   siprec_enabled: boolean;
+  group_count?: number; // list only
+  key_count?: number;
 }
 
 export interface Settings {
@@ -102,6 +107,8 @@ export interface AuditLogEntry {
   after_state: Record<string, unknown> | null;
   metadata: Record<string, unknown> | null;
   source_ip: string | null;
+  actor_name: string | null;  // intercom-client user, by extension
+  entity_name: string | null; // the person or group it's about
 }
 
 export interface ContainerLogs {
@@ -148,7 +155,10 @@ export interface LiveCall {
   to: string;
   toName: string;
   startedAt: string;
+  recording?: boolean;
 }
+
+export interface LiveTalking { group: string; extension: string }
 
 export interface DirectoryUserButton {
   id: string;
@@ -220,7 +230,7 @@ export const api = {
     });
   },
   listSessions() { return req<IntercomSession[]>('/intercom/sessions'); },
-  getLiveStatus() { return req<{ registrations: LiveRegistration[]; calls: LiveCall[] }>('/live'); },
+  getLiveStatus() { return req<{ registrations: LiveRegistration[]; calls: LiveCall[]; talking?: LiveTalking[] }>('/live'); },
   listSessionParticipants(id: string) {
     return req<SessionParticipant[]>(`/intercom/sessions/${id}/participants`);
   },
@@ -235,6 +245,7 @@ export const api = {
   deleteGroup(id: string) {
     return req(`/groups/${id}`, { method: 'DELETE' });
   },
+  listGroupHolders(groupId: string) { return req<GroupHolder[]>(`/groups/${groupId}/holders`); },
   listGroupMembers(groupId: string) { return req<GroupMember[]>(`/groups/${groupId}/members`); },
   addGroupMember(groupId: string, endpointId: string, role: 'member' | 'announcer' = 'member', canTalk = true) {
     return req<GroupMember>(`/groups/${groupId}/members`, {
@@ -272,10 +283,13 @@ export const api = {
   },
 
   getSystemHealth() { return req<SystemHealth>('/system/health'); },
-  getAuditLog(params: { entity_type?: string; actor?: string; limit?: number; offset?: number } = {}) {
+  getAuditLog(params: { entity_type?: string; actor?: string; from?: string; to?: string; kind?: string; limit?: number; offset?: number } = {}) {
     const p = new URLSearchParams();
     if (params.entity_type) p.set('entity_type', params.entity_type);
     if (params.actor) p.set('actor', params.actor);
+    if (params.from) p.set('from', params.from);
+    if (params.to) p.set('to', params.to);
+    if (params.kind) p.set('kind', params.kind);
     if (params.limit != null) p.set('limit', String(params.limit));
     if (params.offset != null) p.set('offset', String(params.offset));
     return req<{ rows: AuditLogEntry[]; total: number; limit: number; offset: number }>(`/system/audit?${p}`);

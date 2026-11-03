@@ -89,11 +89,10 @@ export default function HealthPanel({ onError }: { onError: (msg: string) => voi
             <div className="error-banner" style={{ marginTop: 10 }}>pbx-core unreachable: {health.pbx_core.error}</div>
           )}
 
-          <h2 style={{ marginTop: 20 }}>Endpoints</h2>
-          {health.endpoints.length === 0 ? (
-            <div className="empty-state">No enabled endpoints.</div>
-          ) : (
-            health.endpoints.map(ep => (
+          {/* Non-browser endpoints only: shown when there are any (none today). */}
+          {health.endpoints.length > 0 && <>
+            <h2 style={{ marginTop: 20 }}>Endpoints</h2>
+            {health.endpoints.map(ep => (
               <div className="session-row" key={ep.id}>
                 <div>
                   <div className="session-circuit">{ep.name}</div>
@@ -101,8 +100,8 @@ export default function HealthPanel({ onError }: { onError: (msg: string) => voi
                 </div>
                 <span className={`session-state ${ep.status === 'online' ? 'active' : 'failed'}`}>{ep.status}</span>
               </div>
-            ))
-          )}
+            ))}
+          </>}
 
           <h2 style={{ marginTop: 20 }}>Table Sizes</h2>
           {health.database.table_sizes.map(t => (

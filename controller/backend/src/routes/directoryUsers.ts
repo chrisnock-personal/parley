@@ -8,7 +8,7 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/', async (_req, res, next) => {
-  try { res.json(await directoryUsers.listDirectoryUsers()); } catch (err) { next(err); }
+  try { res.json(await directoryUsers.listDirectoryUsersSummary()); } catch (err) { next(err); }
 });
 
 router.post('/', requireRole('admin', 'editor'), async (req, res, next) => {
