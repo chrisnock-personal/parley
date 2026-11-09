@@ -138,25 +138,32 @@ the only `:latest` rtpengine on Docker Hub is ~5 years old.
 ## Run it (podman-compose)
 ```bash
 cp .env.example .env
-# edit .env: set RTPENGINE_PUBLIC_IP to this host's routed/LAN IP,
-# and change JWT_SECRET / ADMIN_PASSWORD / DRACHTIO_SECRET
+# edit .env: set RTPENGINE_PUBLIC_IP to this host's routed/LAN IP, and
+# fill in JWT_SECRET, ADMIN_PASSWORD, PGPASSWORD, DRACHTIO_SECRET and
+# INTERNAL_API_TOKEN (`openssl rand -hex 24` each). There are no defaults:
+# the stack refuses to start without them.
 
 podman-compose up -d --build
 ```
-- Controller UI: `http://<host>:8080` or `https://<host>:8445` -sign in
+- Controller UI: `https://<host>:8445` (plain `http://<host>:8080` serves
+  `localhost` only and redirects everyone else to HTTPS) -sign in
   with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`. (Host `8445`, not the
   usual `8443` -see `docker-compose.yml`'s comment: `8443`/`8444` collide
   with other projects on the reference lab host.)
-- Intercom Client: `http://<host>:8080/intercom-client/` (localhost only
-  -`getUserMedia` needs a secure context, and `localhost` is
-  browser-exempted) or `https://<host>:8445/intercom-client/` (works from a
+- Intercom Client: `http://localhost:8080/intercom-client/` (`getUserMedia`
+  needs a secure context, and `localhost` is browser-exempted) or `https://<host>:8445/intercom-client/` (works from a
   genuinely separate machine too, once you click through the self-signed
   cert warning once per browser -see "TLS" below).
-- Controller API: `http://<host>:3100/api/v1/...`
+- Controller API: `https://<host>:8445/api/v1/...` through nginx. The
+  backend's own `:3100` is bound to `127.0.0.1` only.
 - pbx-core SIP/WS: `<host>:8188`, SIP UDP/TCP on `:5063` (neither is the
   standard `:8088`/`:5060` -see `pbx-core/entrypoint.sh`'s comment: this
   host also runs another SIP stack, `asterisk-ci`, that already holds both).
-- Postgres: exposed on host `5433` for direct inspection if needed.
+- Postgres: `127.0.0.1:5433` on the host, for direct inspection.
+- Internal only: drachtio's control port `127.0.0.1:9022`; pbx-core's
+  `/status` (`:9080`) and the transcriber's `/talking`/`/poke` (`:9081`)
+  need `Authorization: Bearer $INTERNAL_API_TOKEN`; FreeSWITCH's `:5080`
+  accepts INVITEs only from this host's own address (ACL `pbx_core`).
 
 `pbx-core`, `rtpengine`, and `freeswitch` run with `network_mode: host` —
 required so rtpengine can anchor media reachably for endpoints on other
@@ -193,10 +200,10 @@ entirely if you'd rather not take that tradeoff.
 ### TLS
 `controller-frontend` creates a small **local CA** on first start, and that
 CA signs the server certificate nginx presents. Both are kept in a volume,
-so they survive redeploys. Plain HTTP (`:8080`) and HTTPS (`:8445` in this
-compose file; see `docker-compose.yml`) are served side by side. Opening
-the intercom client over plain HTTP from anywhere but `localhost` redirects
-to HTTPS, because browsers only allow the microphone in a secure context.
+so they survive redeploys. HTTPS is on `:8445` (see `docker-compose.yml`).
+Plain HTTP (`:8080`) serves `localhost` and `/ca.crt` only; any other visit
+redirects to HTTPS, so passwords never cross the LAN in clear text and the
+browser allows the microphone (it needs a secure context).
 Nothing else needs configuring beyond `RTPENGINE_PUBLIC_IP` in `.env`, which
 is used as the certificate's IP entry. The client's SIP/WS signaling is
 proxied through the same nginx at `/ws`.

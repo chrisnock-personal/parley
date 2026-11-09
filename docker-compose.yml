@@ -22,11 +22,14 @@ services:
     environment:
       POSTGRES_DB:       ${PGDATABASE:-intercom}
       POSTGRES_USER:     ${PGUSER:-intercom_user}
-      POSTGRES_PASSWORD: ${PGPASSWORD:-intercom_pass}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?set PGPASSWORD in .env}
     volumes:
       - parley-pgdata:/var/lib/postgresql/data
+    # Loopback only: pbx-core and the transcriber (host networking) reach it
+    # at 127.0.0.1:5433; controller-backend uses the compose network. Host
+    # 5433 avoids clashing with any local Postgres.
     ports:
-      - "5433:5432"   # host 5433 avoids clashing with any local Postgres
+      - "127.0.0.1:5433:5432"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-intercom_user} -d ${PGDATABASE:-intercom}"]
@@ -65,16 +68,17 @@ services:
     environment:
       PORT:            "3100"
       NODE_ENV:         production
-      JWT_SECRET:       ${JWT_SECRET:-dev-secret-change-in-production}
+      JWT_SECRET:       ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_TTL:          "8h"
       ADMIN_EMAIL:      ${ADMIN_EMAIL:-admin@intercom.local}
-      ADMIN_PASSWORD:   ${ADMIN_PASSWORD:-admin123}
-      CORS_ORIGIN:      ${CORS_ORIGIN:-*}
+      ADMIN_PASSWORD:   ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      CORS_ORIGIN:      ${CORS_ORIGIN:-}   # empty = same-origin only (see config.ts)
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN in .env}
       PGHOST:           postgres
       PGPORT:           "5432"
       PGDATABASE:       ${PGDATABASE:-intercom}
       PGUSER:           ${PGUSER:-intercom_user}
-      PGPASSWORD:       ${PGPASSWORD:-intercom_pass}
+      PGPASSWORD:       ${PGPASSWORD:?set PGPASSWORD in .env}
       HEALTH_INTERVAL_MS: "30000"
       # Demo data (controller/backend/src/services/demoSeedService.ts): a
       # broadcast crew on 2001-2008 plus five talk groups. Off by default;
@@ -106,8 +110,10 @@ services:
       # (even a plain `ls` on the mounted path failed with Permission
       # denied) regardless of the uid/keep-id fix above.
       - /run/user/1000/podman/podman.sock:/run/podman/podman.sock:Z
+    # Loopback only (security review 2026-11-09, C2): browsers reach the API
+    # through nginx's /api/v1, and this container holds the podman socket.
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     restart: unless-stopped
 
   controller-frontend:
@@ -149,7 +155,9 @@ services:
     environment:
       DRACHTIO_HOST:   "127.0.0.1"
       DRACHTIO_PORT:   "9022"
-      DRACHTIO_SECRET: ${DRACHTIO_SECRET:-cymru}
+      DRACHTIO_SECRET: ${DRACHTIO_SECRET:?set DRACHTIO_SECRET in .env}
+      # Bearer token for /status (admin.ts) and the transcriber poke.
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN in .env}
       # rtpengine's control address; see images/rtpengine/entrypoint.sh
       # (set RTPENGINE_NG_HOST=10.255.255.254 under WSL2 mirrored networking).
       RTPENGINE_HOST:  ${RTPENGINE_NG_HOST:-127.0.0.1}
@@ -181,7 +189,7 @@ services:
       PGPORT:     "5433"
       PGDATABASE: ${PGDATABASE:-intercom}
       PGUSER:     ${PGUSER:-intercom_user}
-      PGPASSWORD: ${PGPASSWORD:-intercom_pass}
+      PGPASSWORD: ${PGPASSWORD:?set PGPASSWORD in .env}
     depends_on:
       - rtpengine
       - freeswitch
@@ -244,6 +252,7 @@ services:
     network_mode: host   # receives RTP from rtpengine on local ports; reaches pbx-core/rtpengine/whisper on this host
     environment:
       PBX_STATUS_URL: "http://127.0.0.1:9080/status"
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN in .env}
       RTPENGINE_HOST: ${RTPENGINE_NG_HOST:-127.0.0.1}
       RTPENGINE_PORT: "22222"
       MEDIA_IP:       ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
@@ -257,7 +266,7 @@ services:
       PGPORT:     "5433"
       PGDATABASE: ${PGDATABASE:-intercom}
       PGUSER:     ${PGUSER:-intercom_user}
-      PGPASSWORD: ${PGPASSWORD:-intercom_pass}
+      PGPASSWORD: ${PGPASSWORD:?set PGPASSWORD in .env}
     depends_on:
       - pbx-core
       - postgres

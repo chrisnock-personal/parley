@@ -115,7 +115,10 @@ router.get('/health', async (_req: Request, res: Response, next: NextFunction) =
     // pbxCoreService.ts.
     let pbxCore: { reachable: boolean; registrations?: number; calls?: number; error?: string };
     try {
-      const resp = await fetch(`${config.pbxBaseUrl}/status`, { signal: AbortSignal.timeout(3000) });
+      const resp = await fetch(`${config.pbxBaseUrl}/status`, {
+        signal: AbortSignal.timeout(3000),
+        headers: { Authorization: `Bearer ${config.internalToken}` },
+      });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const body = await resp.json() as { registrations: unknown[]; calls: unknown[] };
       pbxCore = { reachable: true, registrations: body.registrations.length, calls: body.calls.length };

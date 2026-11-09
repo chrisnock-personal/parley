@@ -80,7 +80,10 @@ router.get('/groups/participants', requireIntercomClientAuth, async (req, res, n
     catch { return res.status(502).json({ error: 'pbx-core unreachable' }); }
     const talking = new Set<string>();
     try {
-      const r = await fetch(`${config.transcriberUrl}/talking`, { signal: AbortSignal.timeout(500) });
+      const r = await fetch(`${config.transcriberUrl}/talking`, {
+        signal: AbortSignal.timeout(500),
+        headers: { Authorization: `Bearer ${config.internalToken}` },
+      });
       const body = await r.json() as { talking: { group: string; extension: string }[] };
       for (const t of body.talking) talking.add(`${t.group}/${t.extension}`);
     } catch { /* transcriber down: nobody shows as talking */ }

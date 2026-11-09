@@ -15,6 +15,7 @@
 // intercom_transcript_lines attributed to the speaker.
 import { createServer } from 'http';
 import { config } from './config';
+import { hasBearer } from './internalAuth';
 import { MemberTap, Utterance } from './tap';
 import { transcribe } from './whisper';
 import { displayName, insertLine, transcribedGroups } from './db';
@@ -75,7 +76,11 @@ async function handleUtterance(call: LiveCall, u: Utterance) {
 async function tick() {
   let calls: LiveCall[];
   try {
-    const res = await fetch(config.pbxStatusUrl, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(config.pbxStatusUrl, {
+      signal: AbortSignal.timeout(3000),
+      headers: { Authorization: `Bearer ${config.internalToken}` },
+    });
+    if (!res.ok) throw new Error(`pbx-core /status HTTP ${res.status}`);
     calls = ((await res.json()) as { calls: LiveCall[] }).calls;
   } catch (err) {
     console.error('[poll] skipped:', (err as Error).message);
@@ -114,6 +119,11 @@ async function tick() {
 // GET /talking -> { talking: [{ group, extension }] }: who's speaking now.
 // POST /poke -> 204: re-read pbx-core's call list now.
 createServer((req, res) => {
+  if (!hasBearer(req, config.internalToken)) {
+    res.writeHead(401);
+    res.end();
+    return;
+  }
   // POST /poke: pbx-core saying a member just joined a group -look now
   // rather than at the next poll, so their first words are tapped.
   if (req.method === 'POST' && req.url === '/poke') {

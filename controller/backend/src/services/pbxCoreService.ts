@@ -52,7 +52,10 @@ function extOf(aor: string): string {
 }
 
 export async function getLiveStatus(): Promise<{ registrations: LiveRegistration[]; calls: LiveCall[] }> {
-  const resp = await fetch(`${config.pbxBaseUrl}/status`, { signal: AbortSignal.timeout(5000) });
+  const resp = await fetch(`${config.pbxBaseUrl}/status`, {
+    signal: AbortSignal.timeout(5000),
+    headers: { Authorization: `Bearer ${config.internalToken}` },
+  });
   if (!resp.ok) throw new Error(`pbx-core status HTTP ${resp.status}`);
   const raw = await resp.json() as { registrations: RawBinding[]; calls: RawCallInfo[] };
 

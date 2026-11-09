@@ -39,7 +39,13 @@ async function main() {
 
   const app = express();
   const server = http.createServer(app);
-  app.use(cors({ origin: config.corsOrigin, credentials: true }));
+  // CORS only for an explicitly named origin; '*' with credentials would
+  // let any website the user visits call the API with their session.
+  if (config.corsOrigin && config.corsOrigin !== '*') {
+    app.use(cors({ origin: config.corsOrigin.split(',').map((o) => o.trim()), credentials: true }));
+  } else if (config.corsOrigin === '*') {
+    console.warn('[startup] CORS_ORIGIN=* ignored: the API is same-origin through nginx; name an origin if you need CORS');
+  }
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 

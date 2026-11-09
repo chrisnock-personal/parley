@@ -2,8 +2,12 @@
 // Runs network_mode: host, like pbx-core/rtpengine: it receives RTP from
 // rtpengine on local UDP ports, and reaches pbx-core's admin API, rtpengine's
 // ng port and the shared whisper-server on this host directly.
+import { requiredSecret } from './internalAuth';
+
 export const config = {
   pbxStatusUrl: process.env.PBX_STATUS_URL || 'http://127.0.0.1:9080/status',
+  // Bearer token: sent to pbx-core's /status, required on /talking and /poke.
+  internalToken: requiredSecret('INTERNAL_API_TOKEN', 32),
   rtpengine: {
     host: process.env.RTPENGINE_HOST || '127.0.0.1',
     port: parseInt(process.env.RTPENGINE_PORT || '22222', 10),
@@ -40,6 +44,6 @@ export const config = {
     port: parseInt(process.env.PGPORT || '5432', 10),
     database: process.env.PGDATABASE || 'intercom',
     user: process.env.PGUSER || 'intercom_user',
-    password: process.env.PGPASSWORD || 'intercom_pass',
+    password: requiredSecret('PGPASSWORD', 16),
   },
 };

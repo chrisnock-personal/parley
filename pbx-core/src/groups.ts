@@ -126,5 +126,9 @@ export function registerGroupIntercom(srf: Srf) {
 /** Fire-and-forget: a transcriber that's down or slow must never affect the call. */
 function pokeTranscriber() {
   if (!config.transcriberPokeUrl) return;
-  fetch(config.transcriberPokeUrl, { method: 'POST', signal: AbortSignal.timeout(500) }).catch(() => { /* it polls anyway */ });
+  fetch(config.transcriberPokeUrl, {
+    method: 'POST',
+    signal: AbortSignal.timeout(500),
+    headers: { Authorization: `Bearer ${config.admin.token}` },
+  }).catch(() => { /* it polls anyway */ });
 }

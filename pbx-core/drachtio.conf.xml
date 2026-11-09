@@ -2,7 +2,8 @@
 <!-- Reference config. entrypoint.sh passes equivalent flags; keep this in sync
      if you switch to `drachtio -f /etc/drachtio.conf.xml`. -->
 <drachtio>
-  <admin port="9022" secret="cymru">0.0.0.0</admin>
+  <!-- Loopback only; the secret comes from DRACHTIO_SECRET (entrypoint.sh). -->
+  <admin port="9022" secret="set-from-DRACHTIO_SECRET">127.0.0.1</admin>
   <sip>
     <contacts>
       <!-- Pinned off the standard 5060 -see entrypoint.sh's comment: this

@@ -6,6 +6,8 @@
 set -e
 : "${FREESWITCH_BIND_IP:?FREESWITCH_BIND_IP must be set -the host's routed/LAN IP, same as RTPENGINE_PUBLIC_IP}"
 
-sed -i "s/__BIND_IP__/${FREESWITCH_BIND_IP}/g" /usr/local/freeswitch/conf/sip_profiles/intercom.xml
+sed -i "s/__BIND_IP__/${FREESWITCH_BIND_IP}/g" \
+  /usr/local/freeswitch/conf/sip_profiles/intercom.xml \
+  /usr/local/freeswitch/conf/autoload_configs/acl.conf.xml
 
 exec /usr/local/freeswitch/bin/freeswitch -nonat -nc -nf

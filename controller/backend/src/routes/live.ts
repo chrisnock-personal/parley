@@ -18,7 +18,10 @@ router.get('/', async (_req, res, next) => {
     const status = await pbxCore.getLiveStatus();
     let talking: { group: string; extension: string }[] = [];
     try {
-      const r = await fetch(`${config.transcriberUrl}/talking`, { signal: AbortSignal.timeout(500) });
+      const r = await fetch(`${config.transcriberUrl}/talking`, {
+        signal: AbortSignal.timeout(500),
+        headers: { Authorization: `Bearer ${config.internalToken}` },
+      });
       talking = ((await r.json()) as { talking: { group: string; extension: string }[] }).talking;
     } catch { /* transcriber down */ }
     res.json({ ...status, talking });

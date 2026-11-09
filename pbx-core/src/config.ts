@@ -1,8 +1,10 @@
+import { requiredSecret } from './internalAuth';
+
 export const config = {
   drachtio: {
     host: process.env.DRACHTIO_HOST || '127.0.0.1',
     port: parseInt(process.env.DRACHTIO_PORT || '9022', 10),
-    secret: process.env.DRACHTIO_SECRET || 'cymru',
+    secret: requiredSecret('DRACHTIO_SECRET', 16),
   },
   rtpengine: {
     host: process.env.RTPENGINE_HOST || '127.0.0.1',
@@ -56,6 +58,8 @@ export const config = {
   // controller-backend's "Live" view to poll. See admin.ts.
   admin: {
     port: parseInt(process.env.PBX_ADMIN_PORT || '9080', 10),
+    // Bearer token required on /status, and sent with the transcriber poke.
+    token: requiredSecret('INTERNAL_API_TOKEN', 32),
   },
 
   // The transcriber (host networking, like us) is told the moment a member
@@ -79,7 +83,7 @@ export const config = {
     port:     parseInt(process.env.PGPORT || '5433', 10),
     database: process.env.PGDATABASE || 'intercom',
     user:     process.env.PGUSER || 'intercom_user',
-    password: process.env.PGPASSWORD || 'intercom_pass',
+    password: requiredSecret('PGPASSWORD', 16),
   },
 
   // Must match controller-backend's directoryUserService.ts SIP_REALM

@@ -21,6 +21,7 @@ RUN rm -f /usr/local/freeswitch/conf/sip_profiles/*.xml \
 
 COPY modules.conf.xml                    /usr/local/freeswitch/conf/autoload_configs/modules.conf.xml
 COPY autoload_configs/sofia.conf.xml     /usr/local/freeswitch/conf/autoload_configs/sofia.conf.xml
+COPY autoload_configs/acl.conf.xml       /usr/local/freeswitch/conf/autoload_configs/acl.conf.xml
 COPY autoload_configs/conference.conf.xml /usr/local/freeswitch/conf/autoload_configs/conference.conf.xml
 COPY sip_profiles/intercom.xml           /usr/local/freeswitch/conf/sip_profiles/intercom.xml
 COPY dialplan/intercom.xml               /usr/local/freeswitch/conf/dialplan/intercom.xml

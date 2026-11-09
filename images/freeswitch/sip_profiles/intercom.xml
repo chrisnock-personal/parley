@@ -15,10 +15,11 @@
   to the same RTPENGINE_PUBLIC_IP that FREESWITCH_HOST already uses) makes
   this immune to future interface/NIC changes on the host.
 
-  SECURITY NOTE: auth-calls is off and no apply-inbound-acl is set, so this
-  profile accepts any INVITE it receives. That's acceptable only because it's
-  reached solely by pbx-core over host networking / a private LAN in this lab
-  deployment -restrict with a firewall or an ACL before this leaves the lab.
+  Security: auth-calls is off, so apply-inbound-acl is what keeps the LAN
+  out. The "pbx_core" list (autoload_configs/acl.conf.xml) allows only this
+  host's own address (pbx-core runs on host networking and sends from it)
+  and loopback; anyone else on the LAN used to be able to INVITE *8<code>
+  and listen in on a group (security review 2026-11-09, H4).
 -->
 <include>
   <profile name="intercom">
@@ -30,6 +31,7 @@
       <param name="context" value="intercom"/>
       <param name="dialplan" value="XML"/>
       <param name="auth-calls" value="false"/>
+      <param name="apply-inbound-acl" value="pbx_core"/>
       <param name="disable-register" value="true"/>
       <param name="inbound-codec-prefs" value="G722,PCMU,PCMA"/>
       <param name="outbound-codec-prefs" value="G722,PCMU,PCMA"/>

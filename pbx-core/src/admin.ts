@@ -7,9 +7,16 @@
 import { createServer } from 'http';
 import * as registrar from './registrar';
 import * as calls from './calls';
+import { config } from './config';
+import { hasBearer } from './internalAuth';
 
 export function startAdminServer(port: number): void {
   createServer((req, res) => {
+    if (!hasBearer(req, config.admin.token)) {
+      res.writeHead(401);
+      res.end();
+      return;
+    }
     if (req.method === 'GET' && req.url === '/status') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ registrations: registrar.all(), calls: calls.all() }));

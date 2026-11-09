@@ -1,0 +1,18 @@
+<!--
+  Replaces the base image's acl.conf.xml (which only had socket_acl).
+  __BIND_IP__ is filled in by entrypoint.sh from FREESWITCH_BIND_IP, the
+  same host address pbx-core sends from.
+-->
+<configuration name="acl.conf" description="Network Lists">
+  <network-lists>
+    <!-- event socket (stock): loopback only -->
+    <list name="socket_acl" default="deny">
+      <node type="allow" cidr="127.0.0.1/32"/>
+    </list>
+    <!-- the intercom SIP profile: only pbx-core on this host -->
+    <list name="pbx_core" default="deny">
+      <node type="allow" cidr="__BIND_IP__/32"/>
+      <node type="allow" cidr="127.0.0.1/32"/>
+    </list>
+  </network-lists>
+</configuration>

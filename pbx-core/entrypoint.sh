@@ -16,11 +16,14 @@ set -euo pipefail
 # outbound leg to FreeSWITCH is a UAC, not bound to a fixed port), so moving
 # them is safe -grep the repo for "5063"/"8188" before changing either
 # again, in case that ever stops being true.
+# The control port is loopback-only: only this container's own Node app
+# talks to it, and its shared secret travels in clear text.
 /usr/local/bin/drachtio --daemon \
                         --contact "sip:*:5063;transport=udp,tcp" \
                         --contact "sip:*:8188;transport=ws" \
                         --loglevel info --sofia-loglevel 2 \
-                        --port 9022 --secret "${DRACHTIO_SECRET:-cymru}"
+                        --address 127.0.0.1 --port 9022 \
+                        --secret "${DRACHTIO_SECRET:?DRACHTIO_SECRET must be set in .env}"
 
 # --daemon forks and returns immediately regardless of whether the forked
 # process actually stayed up -a bind failure is otherwise silent: the script
