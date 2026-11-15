@@ -65,7 +65,8 @@ export default function DatabasePanel({ onError }: { onError: (msg: string) => v
         : transferType === 'local' ? { type: 'local' as const, path: transferPath }
         : { type: 'scp' as const, host: transferHost, user: transferUser, path: transferPath };
       const res = await api.archiveTables(archiveDays, transfer);
-      setMessage(`Archive "${res.archive_name}" created (${(res.size_bytes / 1024).toFixed(1)} KB). ${res.transfer}`);
+      const n = Object.values(res.rows ?? {}).reduce((a, b) => a + b, 0);
+      setMessage(`Archive "${res.archive_name}" created: ${n} rows, ${(res.size_bytes / 1024).toFixed(1)} KB. ${res.transfer}`);
     } catch (err) { onError((err as Error).message); }
     finally { setBusy(null); }
   }
@@ -131,7 +132,7 @@ export default function DatabasePanel({ onError }: { onError: (msg: string) => v
 
       <h2>Archive &amp; Remote Transfer</h2>
       <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 10 }}>
-        Dumps audit_log + intercom_sessions (+ participants) to a compressed archive, optionally pushed to a remote host.
+        Copies audit log, call sessions, transcripts and chat older than this to a compressed SQL file (psql -f loads it back), optionally pushed to a remote host. Nothing is deleted: purge separately.
       </div>
       <div className="field">
         <label>Archive rows older than (days)</label>

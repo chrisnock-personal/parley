@@ -330,7 +330,7 @@ export const api = {
     });
   },
   archiveTables(days: number, transfer?: { type: 'scp' | 'sftp' | 'ftp' | 'local'; host?: string; port?: number; user?: string; path: string; key_path?: string }) {
-    return req<{ ok: boolean; archive_name: string; size_bytes: number; transfer: string }>('/admin/db/archive', {
+    return req<{ ok: boolean; archive_name: string; size_bytes: number; rows: Record<string, number>; transfer: string }>('/admin/db/archive', {
       method: 'POST', body: JSON.stringify({ days, transfer }),
     });
   },

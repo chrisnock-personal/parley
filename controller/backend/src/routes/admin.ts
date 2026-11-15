@@ -7,7 +7,8 @@
 // driven with -h/-p/-U + a PGPASSWORD env var instead.
 import { Router, Request, Response, NextFunction } from 'express';
 import express from 'express';
-import { exec, execFile } from 'child_process';
+import { exec, execFile, spawn } from 'child_process';
+import * as zlib from 'zlib';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -163,6 +164,72 @@ router.post('/db/purge', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ── Archive contents ────────────────────────────────────────────────────────
+// pg_dump can't filter rows, so the archive is built from one
+// COPY (SELECT ... older than N days) per table, written as a data-only SQL
+// script in pg_dump's own COPY format: `psql -f` loads it back into the
+// database the rows were purged from (they refer to its groups and people;
+// rows still present there clash on their keys).
+// days = 0 archives everything. The WHERE clauses only ever interpolate the
+// validated integer `days`.
+const ARCHIVE_TABLES: { table: string; where: (days: number) => string }[] = [
+  { table: 'audit_log', where: (d) => `event_time < now() - interval '${d} days'` },
+  // Never a live session, as with purge.
+  { table: 'intercom_sessions', where: (d) => `state != 'active' AND started_at < now() - interval '${d} days'` },
+  { table: 'intercom_session_participants', where: (d) =>
+      `session_id IN (SELECT id FROM intercom_sessions WHERE state != 'active' AND started_at < now() - interval '${d} days')` },
+  { table: 'intercom_transcript_lines', where: (d) => `created_at < now() - interval '${d} days'` },
+  { table: 'intercom_chat_messages', where: (d) => `created_at < now() - interval '${d} days'` },
+];
+
+// Streams one COPY ... TO STDOUT into `out`. spawn, no shell.
+function copyOut(sql: string, out: NodeJS.WritableStream): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const p = spawn('psql', [
+      '-h', config.pgHost, '-p', String(config.pgPort), '-U', config.pgUser, '-d', config.pgDatabase,
+      '-X', '-v', 'ON_ERROR_STOP=1', '-c', sql,
+    ], { env: pgEnv() });
+    let err = '';
+    p.stderr.on('data', (d) => { err += d; });
+    p.stdout.pipe(out, { end: false });
+    p.on('error', reject);
+    p.on('close', (code) => code === 0 ? resolve() : reject(new Error(`psql exited ${code}: ${err.trim()}`)));
+  });
+}
+
+async function writeArchive(file: string, days: number): Promise<Record<string, number>> {
+  const gz = zlib.createGzip();
+  const out = fs.createWriteStream(file);
+  const finished = new Promise<void>((resolve, reject) => {
+    out.on('finish', resolve);
+    out.on('error', reject);
+    gz.on('error', reject);
+  });
+  gz.pipe(out);
+  const rows: Record<string, number> = {};
+  try {
+    gz.write(`-- Parley archive, ${new Date().toISOString()}\n`);
+    gz.write(days === 0 ? '-- All rows.\n' : `-- Rows older than ${days} days.\n`);
+    gz.write('-- Data only, in pg_dump COPY format. Load with psql -f into the Parley database these rows\n');
+    gz.write('-- were purged from: sessions, transcripts and chat refer to its groups and people.\n\n');
+    for (const { table, where } of ARCHIVE_TABLES) {
+      const cols = await query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position`, [table]);
+      const list = cols.rows.map((c) => `"${c.column_name}"`).join(', ');
+      const count = await query<{ n: string }>(`SELECT count(*)::text AS n FROM ${table} WHERE ${where(days)}`);
+      rows[table] = Number(count.rows[0].n);
+      gz.write(`-- ${table}: ${rows[table]} rows\nCOPY public.${table} (${list}) FROM stdin;\n`);
+      await copyOut(`COPY (SELECT ${list} FROM ${table} WHERE ${where(days)}) TO STDOUT`, gz);
+      gz.write('\\.\n\n');
+    }
+  } finally {
+    gz.end();
+  }
+  await finished;
+  return rows;
+}
+
 // ── Archive + remote transfer ───────────────────────────────────────────────
 router.post('/db/archive', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -170,9 +237,8 @@ router.post('/db/archive', async (req: Request, res: Response, next: NextFunctio
       days?: number;
       transfer?: { type: 'scp' | 'sftp' | 'ftp' | 'local'; host?: string; port?: number; user?: string; path: string; key_path?: string };
     };
-    // days ends up in archiveName/tmpFile below, which are interpolated into
-    // a shell command (the pg_dump | gzip pipe) -must be a bare integer, not
-    // whatever a client JSON body actually sent.
+    // days ends up in file names and in the archive's SQL -must be a bare
+    // integer, not whatever a client JSON body actually sent.
     const days = Number(rawDays);
     if (!Number.isInteger(days) || days < 0) {
       return res.status(400).json({ error: 'days must be a non-negative integer' });
@@ -180,10 +246,7 @@ router.post('/db/archive', async (req: Request, res: Response, next: NextFunctio
     const archiveName = `parley-archive-${new Date().toISOString().slice(0,10)}-${days}d.sql.gz`;
     const tmpFile = path.join(os.tmpdir(), archiveName);
 
-    await execAsync(
-      `pg_dump ${pgConnArgs()} --table=audit_log --table=intercom_sessions --table=intercom_session_participants | gzip > ${tmpFile}`,
-      { env: pgEnv(), timeout: 300_000 }
-    );
+    const rows = await writeArchive(tmpFile, days);
     const stat = fs.statSync(tmpFile);
     let transferResult = 'No transfer configured';
 
@@ -223,8 +286,8 @@ router.post('/db/archive', async (req: Request, res: Response, next: NextFunctio
     }
 
     try { fs.unlinkSync(tmpFile); } catch { /* best effort */ }
-    await audit(req.user!.email, 'database', '00000000-0000-0000-0000-000000000000', 'update', { action: 'archive', days, transfer: transferResult });
-    res.json({ ok: true, archive_name: archiveName, size_bytes: stat.size, transfer: transferResult });
+    await audit(req.user!.email, 'database', '00000000-0000-0000-0000-000000000000', 'update', { action: 'archive', days, rows, transfer: transferResult });
+    res.json({ ok: true, archive_name: archiveName, size_bytes: stat.size, rows, transfer: transferResult });
   } catch (e) { next(e); }
 });
 
