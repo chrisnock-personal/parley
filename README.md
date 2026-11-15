@@ -2,120 +2,198 @@
 
 # Parley
 
-A container-based IP intercom with **direct** (point-to-point) and **group**
-(open-mic + PTT) calling, a **custom TypeScript PBX core** (drachtio +
-rtpengine), a real-browser **WebRTC intercom client** (a direct-intercom
-panel plus any number of talk **groups** joined at once, laid out after
-Eyevinn's open intercom), and an admin **controller console** for directory
-users, groups, live status, health, audit, and database backup. Built for a
-**routed / multi-subnet** deployment.
+**An IP intercom for crews who talk while they work: talk groups and direct
+calls in a web browser, with live transcripts, group chat and call
+recording.** It runs as a handful of containers on one server, and the
+people using it need nothing but a browser.
+
+Each person logs in from any browser (a desk PC, a laptop, an iPad, a
+phone), sees the groups they belong to and the people they can call, and
+joins as many groups at once as their job needs. What's said in a group is
+written down as it's said, typed messages sit beside it, and calls can be
+recorded to a SIP-REC compliance recorder. Administrators run it from a
+separate console.
+
+![Parley in use: the Floor Manager is in the Production group while the Director talks; its conversation mixes what was said with what was typed](docs/images/01-hero.png)
+
+*The Floor Manager (2007) during a countdown: Production is joined and
+recorded, the Director is talking (the ring round the avatar), and the
+conversation mixes said and typed lines. Studio Floor and All Call are
+starred, so they stay open as full cards without being joined.*
+
+A fuller tour is on the [project overview page](https://github.com/chrisnock-personal/project-overviews/tree/main/parley).
 
 Parley (called Open Intercom until 2026-10-18) continues **ip-intercom**
 (`chrisnock-personal/ip-intercom`) in a fresh repo, without its git
-history. It starts from ip-intercom `92ea17a` (2026-10-17). Trading-turret features (handsets, speaker, external PBX
-lines) live in a sister project, **Open Turret**
-(`chrisnock-personal/open-turret`), forked from ip-intercom the same day.
+history. Trading-turret features (handsets, speaker, external PBX lines)
+live in a sister project, **Open Turret** (`chrisnock-personal/open-turret`).
 
+## Contents
+- [Features](#features): [talk groups](#talk-groups), [direct intercom](#direct-intercom),
+  [conversation](#conversation-transcripts-chat-read-aloud), [recording](#recording-sip-rec),
+  [devices and themes](#devices-and-themes), [admin console](#admin-console)
+- [Architecture](#architecture)
+- [Run it](#run-it-podman-compose), [TLS](#tls), [setting up a client](#setting-up-an-intercom-client)
+- [Repo layout](#repo-layout), [notes](#notes--knobs), [brand](#brand), [roadmap](#roadmap)
+
+## Features
+
+### Talk groups
+A group is a party line: everyone in it hears everyone else who's talking.
+Groups are **open mic**, **push to talk** or (not finished, see the
+roadmap) **listen only**. A user can be in any number at once, and each
+joined group has its own mic toggle, wide **Push To Talk** button, listen
+mute and volume. Muting and PTT happen in the browser (gating the local mic
+track), so they take effect at once with no signalling round trip.
+
+- **Who's in it and who's talking**, shown on every group card whether or
+  not you've joined (from pbx-core's live call list, polled every second).
+  The talking ring ignores music and held tones (a pitch check in the
+  transcriber).
+- **Favourites**: star a group to keep it as a full card. Cards are joined
+  groups, then favourites, then groups opened from a tile; the rest fold
+  into tiles under "Other groups".
+- **Person card**: click any avatar to see the person's name, extension,
+  whether they're online or talking, which of your groups they're in, and
+  call them.
+
+![A person card opened from the Production group: the Director, online and talking, with a button to call them](docs/images/02-person-card.png)
+
+Under the hood a group call (`*8<dial_code>`) is B2BUA'd by pbx-core to
+FreeSWITCH, which joins it into a `mod_conference` room of the same name,
+used purely as a mixer.
+
+### Direct intercom
+The **Intercom** card holds a user's ICM keys, one per person they call
+often. Press one and the other side answers by itself (pbx-core adds
+`Call-Info: answer-after=0` / `Alert-Info` auto-answer headers), so you're
+talking straight away. Either side can **hold and resume** (a real
+re-INVITE through rtpengine, not a local mute), and auto-answer can be
+switched off per session for a manual Answer/Reject banner.
+
+![A direct call from the Director, answered automatically and recorded, with mic, hold and hang-up controls](docs/images/03-direct-call.png)
+
+### Conversation: transcripts, chat, read aloud
+Switched on per group in the console:
+- **Transcribe**: the `transcriber` service taps each member's own voice
+  from rtpengine, cuts it into utterances at pauses, sends them to a
+  whisper.cpp `whisper-server` (`WHISPER_URL`) and stores each line against
+  the speaker, so two people talking over each other are still attributed
+  correctly. Silence, muted members and music are never sent.
+- **Chat**: members type to the group (1-1000 characters).
+
+With both on, spoken and typed lines share one **Conversation** timeline,
+marked *said* or *typed*, with an Everything / Spoken / Typed filter. Anyone
+with a button for the group can read it, joined or not, and a *new* badge
+marks unread lines. Lines are kept for the retention set under Settings,
+then deleted.
+
+![The Production conversation with spoken and typed lines, and Studio Floor's transcript read without joining](docs/images/04-conversation.png)
+
+**Read aloud** (per user, per group) speaks a joined group's incoming chat
+messages with the browser's own voice: queued so they don't overlap, the
+group's audio ducked to 30% while one is read, and held back while you hold
+Push To Talk. Voice, speed and volume are per device.
+
+![Read aloud on in Production: one message being read, one waiting, and the read-aloud settings in the profile menu](docs/images/04b-read-aloud.png)
+
+### Recording (SIP-REC)
+Turn on **Record calls** for a person and set the recording server URI
+under Settings. pbx-core then acts as an RFC 7866 recording client for that
+person's direct calls and group legs: it takes a copy of the media from
+rtpengine (`subscribe request`, so nothing is added to the audio path),
+sends the recorder one labelled stream per party plus RFC 7865 participant
+metadata, and ends the session with the call. Recording fails open: if the
+recorder can't be reached the call goes ahead unrecorded (logged). A
+**REC** tag shows in the client's top bar when your calls are recorded, on
+a direct call while it's recorded, and on a group while any member's leg
+is.
+
+![A Parley group call as received by CallNest, a SIP-REC recorder: the Director's leg into Production, complete with no packet loss](docs/images/05-recording.png)
+
+### Devices and themes
+The client is a web page served at `/intercom-client/`, so there's nothing
+to install, and a user's groups, keys, favourites and read-aloud choices
+follow them to whichever device they log in on (a hot-desk login:
+extension + password). Two themes: a graphite **Panel** and a warmer
+**Warm**. On a phone the cards stack into one column and a group's
+conversation opens full screen.
+
+<p>
+<img src="docs/images/06-warm-theme.png" width="58%" alt="The client in the Warm theme">
+<img src="docs/images/10-phone.png" width="38%" alt="The client on a phone: keys and groups, a joined group with push to talk, and the conversation full screen">
+</p>
+
+### Admin console
+A separate console at `/` with a sidebar: **Live**, **People**, **Groups**,
+and for admins **Settings**, **Health**, **Audit** and **Backups**. Console
+users are viewers, editors or admins (JWT roles); actions a role can't take
+are greyed out with the reason.
+
+- **Live**: who's online, each group in use with who's in it and who's
+  talking, direct calls, and what's being recorded, straight from
+  pbx-core's in-memory state (pbx-core's admin `/status`, enriched with
+  names by the controller).
+- **People**: everyone with a client login. Name, extension, login on/off,
+  Record calls (admin only), their groups and ICM keys, password reset.
+- **Groups**: talk mode, Transcribe and Chat, who has the group (give it to
+  several people in one place) and who's in it now.
+- **Settings**: the SIP-REC recording server, and how long transcripts and
+  chat are kept.
+- **Health**: host CPU/memory/disk, database size and table sizes,
+  pbx-core reachability, and each container's logs (over the podman API
+  socket; see below).
+- **Audit**: a plain-language history ("Floor Manager: record calls turned
+  on") filtered by time, person, kind and subject, exportable as CSV.
+- **Backups**: `pg_dump` download and restore, `VACUUM ANALYZE`, purge and
+  gzip archive (local or SCP) of old audit and session rows.
+
+<p>
+<img src="docs/images/07-console-live.png" width="49%" alt="The console's Live page: people online, Production in use with the Director talking, a direct call, one call recorded">
+<img src="docs/images/08-console-people.png" width="49%" alt="The People page with the Floor Manager selected">
+</p>
+<p>
+<img src="docs/images/09-console-group.png" width="49%" alt="The Groups page with Production selected: open mic, transcribed, with chat">
+<img src="docs/images/09b-console-health.png" width="49%" alt="The Health page: host load, database, SIP core up, table sizes and logs">
+</p>
+
+The screenshots come from the demo crew (see [Demo data](#demo-data)),
+with four scripted crew members talking and recording going to CallNest,
+a SIP-REC recorder from another of my projects.
+
+## Architecture
 ```
-intercom-client (browser: getUserMedia/RTCPeerConnection, wss:// or ws:// via nginx)
+intercom-client (browser: getUserMedia/RTCPeerConnection, wss:// via nginx /ws)
       │ SIP/WS (WebRTC media, DTLS-SRTP)
       ▼
-   pbx-core (drachtio + TS)  ◀─ ng ─▶  rtpengine (media anchor; bridges DTLS-SRTP ↔ plain RTP)
-      │ group calls (*8<code>) B2BUA'd to ▼
-   freeswitch (mod_conference open-mic mixer)
-
+   pbx-core (drachtio + TS)  ◀─ ng ─▶  rtpengine (media anchor; DTLS-SRTP ↔ plain RTP)
+      │ group calls (*8<code>) B2BUA'd to ▼              │ subscribe (copies of media)
+   freeswitch (mod_conference open-mic mixer)            ├─▶ transcriber ─▶ whisper-server
+                                                         └─▶ SIP-REC recorder (via pbx-core)
 controller-frontend (nginx: console + /intercom-client/ + /ws proxy, HTTP+HTTPS)
                                                   ──/api/v1──▶ controller-backend
                                                                 (Express+TS, Postgres)
 ```
 
-Seven compose services: `postgres`, `controller-backend`, `controller-frontend`
-(also serves the intercom client at `/intercom-client/`), `pbx-core`,
-`rtpengine`, `freeswitch`, `transcriber`.
+Seven compose services: `postgres`, `controller-backend`,
+`controller-frontend` (also serves the intercom client at
+`/intercom-client/`), `pbx-core`, `rtpengine`, `freeswitch`, `transcriber`.
 
-## Screenshots
-<img width="806" height="709" alt="Image" src="https://github.com/user-attachments/assets/8303f000-b91e-44af-9d4f-048e5aab5b8f" />
-<br>
-<img width="1169" height="959" alt="Image" src="https://github.com/user-attachments/assets/5ff5b03c-87df-4565-b258-da077731dd2f" /><br>
-<img width="1169" height="959" alt="Image" src="https://github.com/user-attachments/assets/1380e9f6-4454-46c2-8348-d31b81dd0813" /><br>
-<img width="1169" height="959" alt="Image" src="https://github.com/user-attachments/assets/78be5a90-a6b2-4580-9e5a-92e42d4a4555"/><br>
-<img width="1174" height="896" alt="Image" src="https://github.com/user-attachments/assets/08cc2e70-3216-43cd-baeb-8fe4c050febc" /><br>
-
-``
-
-## What's implemented
-
-### Calling
-- **Direct intercom** -dial a registered extension; pbx-core injects an
-  auto-answer header (`Call-Info`/`Alert-Info`) and anchors media through
-  rtpengine. Real SIP **hold/resume** (a genuine re-INVITE, not just local
-  mute) works both directions of a call.
-- **Group open-mic** -pbx-core B2BUAs a group call (`*8<dial_code>`)
-  straight to FreeSWITCH, which joins it into a `mod_conference` room of the
-  same name. Every unmuted member hears every other one -no custom mixing
-  logic. PTT floor control is done client-side (gating the local mic track),
-  not at the mixer.
-- **intercom-client/** -the only endpoint type in this system: a real-browser
-  softphone (genuine `getUserMedia`/`RTCPeerConnection`, no headless shims)
-  laid out after Eyevinn's open intercom
-  ([intercom-frontend](https://github.com/Eyevinn/intercom-frontend)). An
-  **Intercom** panel holds the one direct call (auto-answer toggle, real SIP
-  hold/resume) and its ICM keys. Below it, one strip per assigned
-  **group**: join or leave each independently, any number at once. Each
-  group lists who's in it right now, even before you join (from
-  pbx-core's live call list, polled every 3s). Every
-  slot has its own talk controls (latching mute plus hold-to-talk PTT),
-  its own listen controls (listen mute and volume), and an activity light
-  driven by inbound audio level. Driven by a **directory user** login
-  (extension + password, a hot-desk model -not tied to one physical
-  device).
-- rtpengine bridges a genuine WebRTC leg (the intercom client) to plain RTP
-  (FreeSWITCH) automatically -including the trickier case of **two**
-  simultaneous WebRTC legs (intercom client ↔ intercom client), which needed
-  its own `ICE-lite` handling distinct from the single-WebRTC-leg case.
-
-### Call recording (SIP-REC) and live transcription
-Both take a copy of call media from **rtpengine** (`subscribe request`), so
-nothing extra sits in the media path and browser legs arrive already
-decrypted.
-- **SIP-REC** (RFC 7865/7866): turn on **Record calls** for a directory user
-  and set the **recording server URI** under Settings. pbx-core then acts as
-  the recording client for that user's direct calls and group legs. It opens
-  a separate session to the recording server carrying one labelled stream
-  per party plus RFC 7865 participant metadata, and ends it with the call.
-  Recording is fail-open: if the server can't be reached, the call goes
-  ahead unrecorded (logged).
-- **Live transcription**: turn on **Transcribe** for a group. The
-  `transcriber` service taps each member's own voice, cuts it into
-  utterances at pauses (silence and muted PTT members are never sent),
-  transcribes it with a whisper.cpp `whisper-server` (`WHISPER_URL`; by
-  default a shared instance on the host), and stores lines attributed to
-  the speaker. In the intercom client, a **Transcript** button on that
-  group's strip shows it live to anyone with the group, joined or not. Lines
-  are kept for the retention set under Settings.
-
-### Controller console
-- **Live** -real registered intercom clients and in-progress calls, polled
-  straight from pbx-core's own in-memory state (pbx-core has no database
-  by design; a small admin HTTP endpoint on pbx-core exposes this, enriched
-  with friendly names by the controller). Call-type badges (ICM/GRP-ICM)
-  and per-type metrics.
-- **Groups** / **Directory Users** -full CRUD (create/edit/delete), button
-  assignments (direct or group targets) per directory user.
-- **Health** (admin only) -host CPU/mem/disk, DB size/stats, endpoint
-  statuses, pbx-core reachability, and a live container-log viewer (reads
-  other containers' logs over the podman API socket).
-- **Audit** (admin only) -searchable history of `audit_log` (who did what,
-  when -logins, CRUD, call start/end, PTT grants, including intercom-client-
-  placed calls).
-- **Database** (admin only) -`pg_dump` backup download, restore from an
-  uploaded dump, `VACUUM ANALYZE`, table size/bloat stats, retention/purge
-  for `audit_log`/`intercom_sessions`, and gzip archive + optional SCP
-  transfer.
-- Users / JWT / RBAC (viewer/editor/admin), append-only audit log,
-  background endpoint health polling -conventions deliberately mirror
-  Chris's Walk the Nxt Floor project (`pg` pool, numbered migrations, JWT
-  roles, `audit_log` shape).
+- **pbx-core is our own SIP code** in TypeScript on drachtio (registrar,
+  direct and group routing, re-INVITE handling, SIP-REC), not a
+  general-purpose PBX. It authenticates every REGISTER and INVITE with SIP
+  digest auth and checks the caller is who the `From` says.
+- **rtpengine anchors all media**, so calls work across routed networks
+  where devices can't reach each other, and bridges the browsers' WebRTC
+  (DTLS-SRTP, ICE-lite) to plain RTP for FreeSWITCH, including two WebRTC
+  legs bridged to each other.
+- **The client is a genuine WebRTC endpoint** (real `getUserMedia`/
+  `RTCPeerConnection`), laid out after Eyevinn's open intercom
+  ([intercom-frontend](https://github.com/Eyevinn/intercom-frontend)): one
+  direct-intercom slot plus any number of joined groups on one JsSIP UA.
+- Controller conventions (`pg` pool, numbered migrations, JWT roles,
+  append-only `audit_log`, background health polling) follow the author's
+  Walk the Nxt Floor project.
 
 ### Media images are built locally, not pulled
 Both media components are built from Dockerfiles under `images/` rather
@@ -229,10 +307,11 @@ If `RTPENGINE_PUBLIC_IP` changes, a new CA is generated and every device
 must install it again.
 
 ### Setting up an intercom client
-1. Console → **Directory Users** panel → create a person (name, extension,
-   intercom-client login password), then add them a direct button (target
-   extension) and/or a group button.
-2. Open `http://localhost:8080/intercom-client/`, log in with the extension
+1. Console → **People** → add a person (name, extension, client login
+   password), then give them groups and ICM keys (the people they can call
+   with one press).
+2. Open `https://<host>:8445/intercom-client/` (or
+   `http://localhost:8080/intercom-client/` on the host itself), log in with the extension
    + password.
 3. Press an ICM key -direct calls auto-connect instantly (pbx-core's
    auto-answer headers) on the Intercom panel; press the same key again to
@@ -246,12 +325,12 @@ must install it again.
    login.
 
 ### Testing a group (open-mic)
-1. Console → **Groups** panel → create a group (mode *Talkback* for
-   open-mic, *Announce* for one-way paging). Dial code defaults to a slug
-   of the name.
-2. Tick which endpoints/directory users are members via their button
-   assignments, or add a group button to a directory user directly.
-3. Have an intercom client press the group button -pbx-core routes
+1. Console → **Groups** → add a group (talk mode *Open mic* or *Push to
+   talk*; *Listen only* isn't finished). The dial code defaults to a slug
+   of the name. Tick *Transcribe* and/or *Chat* if wanted.
+2. Give it to people, either on the group's own page or on each person's
+   page under **People**.
+3. Have a client press **Join** on the group: pbx-core routes
    `*8<dial_code>` to FreeSWITCH, which joins every talking member into the
    same conference. Everyone unmuted hears everyone else.
 
@@ -290,8 +369,7 @@ patches/
   credential (pbx-core stores/checks a precomputed HA1 hash of it, never the
   plaintext -see `migrations/011_directory_user_sip_auth.sql`). A directory
   user created or password-reset before this migration, or whose extension
-  was changed since, needs a password reset (Directory Users panel -> "Reset
-  intercom client login password") before they can register again.
+  was changed since, needs a password reset (People -> **Reset password**) before they can register again.
 - **Endpoint REST API tokens**: `controller-backend` sends `Authorization:
   Bearer <token>` on every call to an endpoint's `rest_url` when one is set
   (`POST /endpoints/:id/regenerate-token`, admin-only, returns the token
