@@ -34,7 +34,7 @@ live in a sister project, **Open Turret** (`chrisnock-personal/open-turret`).
   [devices and themes](#devices-and-themes), [admin console](#admin-console)
 - [Architecture](#architecture)
 - [Run it](#run-it-podman-compose), [TLS](#tls), [setting up a client](#setting-up-an-intercom-client)
-- [Repo layout](#repo-layout), [notes](#notes--knobs), [roadmap](#roadmap)
+- [Repo layout](#repo-layout), [notes](#notes--knobs), [roadmap](#roadmap), [license](#license)
 
 ## Features
 
@@ -397,3 +397,9 @@ patches/
 ## Roadmap
 Planned work, open questions and known bugs are tracked in
 [GitHub issues](https://github.com/chrisnock-personal/parley/issues).
+
+## License
+
+MIT. See [LICENSE](LICENSE). The container images it builds pull in
+third-party software under its own licences (FreeSWITCH, rtpengine,
+drachtio, PostgreSQL, nginx and others).
