@@ -34,7 +34,7 @@ live in a sister project, **Open Turret** (`chrisnock-personal/open-turret`).
   [devices and themes](#devices-and-themes), [admin console](#admin-console)
 - [Architecture](#architecture)
 - [Run it](#run-it-podman-compose), [TLS](#tls), [setting up a client](#setting-up-an-intercom-client)
-- [Repo layout](#repo-layout), [notes](#notes--knobs), [brand](#brand), [roadmap](#roadmap)
+- [Repo layout](#repo-layout), [notes](#notes--knobs), [roadmap](#roadmap)
 
 ## Features
 
@@ -393,39 +393,6 @@ patches/
   npm run dev` needs `PGHOST`/`PGPORT` etc pointed at a reachable Postgres;
   note `migrate.ts`'s `MIGRATIONS_DIR` assumes the container layout —
   adjust the relative path if running straight from `src/`.
-
-## Brand
-
-The name is **Parley**, and the logo is two voices with their waves meeting
-in the middle. It lives in one place, `brand/`:
-- `brand/mark.ts`: the logo as SVG markup (a full version, and a simpler
-  one used below 28px so the thin waves don't blur together). Both apps
-  import it; its colours come from each app's `--mark-a`/`--mark-b` CSS
-  variables, so it follows the theme.
-- `brand/public/`: `favicon.svg`, `apple-touch-icon.png` (iPad home screen)
-  and `icon-512.png`, copied into both builds as Vite's `publicDir`.
-
-Everything else was renamed from `open-intercom` on 2026-10-18 too: the
-GitHub repo (`chrisnock-personal/parley`), containers (`parley-*`), volumes,
-packages, the SIP realm (`parley`) and browser storage keys. The realm is
-part of every stored SIP password hash; a user's hash is refreshed the next
-time they log in to the client, so nobody needs a password reset. The
-generic word "intercom" stays where it names the thing rather than the
-product: the intercom client (`intercom-client/`, `/intercom-client/`), the
-`intercom_*` tables and the `intercom` database.
-
-A second logo is kept in reserve, for if the product grows text chat
-alongside voice: a speech bubble with a live level meter (`P5` on the design
-canvas). Its 48x48 drawing:
-
-```svg
-<path d="M12 6 H36 A8 8 0 0 1 44 14 V28 A8 8 0 0 1 36 36 H22 L13 43 V36 H12 A8 8 0 0 1 4 28 V14 A8 8 0 0 1 12 6 Z" fill="#5BC0EB"/>
-<rect x="13.2" y="17" width="3.6" height="8" rx="1.8" fill="#121417"/>
-<rect x="19.2" y="13" width="3.6" height="16" rx="1.8" fill="#121417"/>
-<rect x="25.2" y="15.5" width="3.6" height="11" rx="1.8" fill="#121417"/>
-<rect x="31.2" y="18.5" width="3.6" height="5" rx="1.8" fill="#121417"/>
-<circle cx="38.5" cy="11.5" r="4.5" fill="#4CC38A" stroke="#121417" stroke-width="2.5"/>
-```
 
 ## Roadmap
 Each item needs mocking or working through before it's built.
