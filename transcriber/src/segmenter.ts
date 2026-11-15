@@ -31,7 +31,11 @@ const FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS / 1000;
 const SPEECH_WINDOW = 15;      // 300 ms
 const SPEECH_MIN = 5;
 const SOUND_RMS = 250;
-const PREROLL_FRAMES = 15;     // keep 300 ms before speech starts, so first syllables aren't clipped
+// Keep 500 ms before speech is detected, so first syllables aren't clipped.
+// Detection fires on voiced, speech-shaped frames, so an unvoiced opening
+// ("St-" of "Stand by") is already behind it; 300 ms didn't reach back far
+// enough on a live G.722 leg ("Tanned by", issue #3).
+const PREROLL_FRAMES = 25;
 const SPLIT_SEARCH_FRAMES = 75; // a segment cut at maxSegmentMs ends at the quietest frame in its last 1.5 s
 const MIN_SPEECH_FRAMES = 25;  // at least 500 ms of speech: shorter bursts are clicks, coughs, or fragments whisper garbles
 const MUSIC_WINDOW = 50;       // 1 s of frame-to-frame pitch steps

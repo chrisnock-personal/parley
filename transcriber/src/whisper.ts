@@ -24,6 +24,14 @@ import { cleanWhisperText, rms, toWav, SAMPLE_RATE } from './audio';
 // threshold as CallRaven.
 const SILENCE_RMS = 150;
 const FULL_AUDIO_CTX = 1500;
+// Silence put in front of every clip. Whisper skips or clips the opening
+// words of a clip whose speech starts at its first sample: measured
+// 2026-11-15 (issue #3) on a live 6.3 s line, it returned only the second
+// sentence ("floor is the guest seated and miked."); with 300 or 500 ms of
+// silence first it returned all of it. The segmenter's pre-roll only helps
+// when audio arrived before the speech, and a sender that sends no packets
+// between transmissions (CallRaven, some browsers) leaves it empty.
+const LEAD_SILENCE_MS = 300;
 // Gate 2 thresholds. Real speech measured nsp ~0.05 / logprob ~-0.04;
 // noise ~0.6-0.8 / -0.3 to -0.5.
 const MAX_NO_SPEECH_PROB = 0.5;
@@ -42,7 +50,9 @@ export function transcribe(pcm: Int16Array, who: { extension: string; group: str
   return run;
 }
 
-async function infer(pcm: Int16Array, who: { extension: string; group: string }): Promise<string | null> {
+async function infer(speech: Int16Array, who: { extension: string; group: string }): Promise<string | null> {
+  const pcm = new Int16Array(LEAD_SILENCE_MS * SAMPLE_RATE / 1000 + speech.length);
+  pcm.set(speech, pcm.length - speech.length);
   const seconds = pcm.length / SAMPLE_RATE;
   const wav = toWav(pcm);
   const form = new FormData();
