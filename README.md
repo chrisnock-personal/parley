@@ -40,8 +40,8 @@ live in a sister project, **Open Turret** (`chrisnock-personal/open-turret`).
 
 ### Talk groups
 A group is a party line: everyone in it hears everyone else who's talking.
-Groups are **open mic**, **push to talk** or (not finished, see the
-roadmap) **listen only**. A user can be in any number at once, and each
+Groups are **open mic**, **push to talk** or (not finished, see
+[#11](https://github.com/chrisnock-personal/parley/issues/11)) **listen only**. A user can be in any number at once, and each
 joined group has its own mic toggle, wide **Push To Talk** button, listen
 mute and volume. Muting and PTT happen in the browser (gating the local mic
 track), so they take effect at once with no signalling round trip.
@@ -395,118 +395,5 @@ patches/
   adjust the relative path if running straight from `src/`.
 
 ## Roadmap
-Each item needs mocking or working through before it's built.
-
-**Admin console rework**: done 2026-11-03 (commit 0134e69).
-
-**Read chat messages aloud (built 2026-11-03; still to try on a real device)**
-Optional text-to-voice for incoming chat messages, switched on per group
-in the client (Chris, 2026-11-03). Mocked on the "Parley Read Aloud"
-design canvas: a Read aloud toggle on the group's Conversation header, a
-"Read aloud" tag on the card while it's on, settings (voice, speed,
-volume, say who sent it, turn group audio down while reading, wait while
-I'm talking, say which group) in the profile menu, and a speaker button in
-the phone's conversation sheet. Decided:
-- **Only joined groups, and only where it's switched on.** The toggle can
-  be set on any group, but messages are read only while you're in it.
-  Never your own messages.
-- **The setting follows the person**, stored on the server per group
-  button like favourites, not per device.
-- **Voice:** start with the browser's own `speechSynthesis` (no server,
-  works on iPads; voices differ by device). Server-side Piper later if a
-  consistent voice matters. Played to this listener only, never into the
-  group.
-- **Clashes:** queue messages rather than overlap them, turn that group's
-  audio down while one is read, and hold them while you're holding Push To
-  Talk; Skip and Stop while a queue is waiting.
-Built as above (commit aad90b9); tested with speech stubbed. Still to check on a real device: **echo.** On open mic with speakers the read-out could go
-back into the mic, into the group and its transcript. The browser's echo
-cancellation may not cover OS speech synthesis; test on real devices, and
-if needed mute the mic while reading on open mic, or play server-made audio
-through the page so echo cancellation can see it.
-
-**Transcript and chat retention: archive before culling? (needs working through)**
-Today (checked 2026-11-03): transcript lines and chat messages are stored
-in Postgres (`intercom_transcript_lines`, `intercom_chat_messages`), kept
-for Settings' "Keep transcripts and chat for" days (default 30), then
-**deleted** hourly by controller-backend. They can also be purged by hand
-(Database page, min 30 days). Nothing archives them: the Database page's
-archive dumps only `audit_log` and `intercom_sessions` (and dumps those
-whole: its "older than N days" only ends up in the file name). They
-survive only inside a full backup. They aren't linked to SIP-REC
-recordings; the recorder (e.g. CallNest) keeps its own copy of the audio
-with its own retention, transcription and legal hold.
-Questions:
-- **What the transcript is for.** An operational aid (catch up on the
-  last hour), or a record? If a record, the recording in the SIP-REC
-  recorder is the authoritative one, and Parley's transcript could stay
-  short-lived.
-- **Archive before deleting.** Before the hourly prune, write the lines
-  about to go to a dated file per group per day (JSONL or plain text),
-  locally or pushed over SCP like the Database archive (which should also
-  honour its "older than" and include these tables).
-- **Per-group retention.** Some groups (a compliance desk) may need longer,
-  some (a chatty floor) none at all; a per-group override of the global
-  setting, including "don't keep".
-- **Hand it to the recorder.** Send each group's lines to the recorder as
-  metadata on the matching recordings, so search, retention and legal hold
-  live in one place (CallNest has an ingest API).
-- **Searching and exporting.** A console page to search past
-  transcripts/chat by group, person, date and words, and export a range.
-- **Summaries.** An AI summary per group per shift, using the shared
-  Ollama, kept after the lines themselves are culled.
-
-**Known bugs (found 2026-11-03, not fixed)**
-- **Transcriber drops the start of an utterance.** The first word or so is
-  sometimes lost ("Standby everyone" -> "and by everyone", "Okay" -> "K"),
-  and once a whole short line from a synthetic voice was dropped. Likely
-  the segmenter starting a segment late (or the music/pitch filter on a
-  monotone voice); reproduce with the overview's Piper lines.
-- **Group card headers get cramped.** With REC, Transcribed and Chat tags,
-  a call timer, four avatars and the star, the status line wraps to three
-  lines on a 400 px card (visible in the overview's hero screenshot).
-- **Backups archive ignores "older than N days".** `POST /admin/db/archive`
-  dumps `audit_log` and `intercom_sessions` whole; `days` only ends up in
-  the file name. It also doesn't include transcripts or chat (see the
-  retention item above).
-
-**Client UI (mock first)**
-- **Keyboard hotkeys** (from Eyevinn), if wanted: per-group push-to-talk
-  and mute, answer/hang up the intercom, a global mute. Mainly for desk
-  operators with busy hands, and for foot pedals / Stream Deck, which send
-  key presses. Mocked (design canvas, options H1-H3); not chosen yet.
-- **Input/output device selection** (`setSinkId`, `getUserMedia` device
-  ids): per device or per slot (e.g. a group to a speaker, the intercom to
-  a headset), and where it lives (profile menu or per card).
-- Saved **presets** (a set of groups to join in one go), and Stream Deck
-  control via Bitfocus Companion (both from Eyevinn).
-
-**Needs working through**
-- **Admin remote mute**, kept separate from self-mute (Eyevinn's
-  `effectiveMuted = adminMuted || selfMuted`). Today PTT/mute happens only
-  in the browser, on purpose (see CLAUDE.md), so a remote mute needs a
-  server-side path: FreeSWITCH conference control (ESL) or rtpengine
-  blocking the member's media. Also: who may do it, and how the muted
-  person is told.
-- **Program / audio-feed groups**: listen-only feeds that duck while anyone
-  talks in another group. Where the feed comes from (an RTP/SIP source into
-  FreeSWITCH?), and whether ducking is done in the browser (simplest: the
-  client already knows who's talking) or in the mix.
-- **Announce-zone listen-only members** aren't dialled out yet (only
-  talkers are).
-- **API keys** and **WebSocket live session streaming** (instead of the
-  client's 1 s polling).
-
-**To verify on real devices**
-- The iPad's home-screen icon, and its reconnect screen after the SIP realm
-  change.
-- A desk browser to iPad call over HTTPS (the "remote desk" case).
-- Several groups joined at once alongside a direct call, PTT press/release,
-  and the activity light.
-
-**Related projects**
-- Port SIP-REC recording, avatars and live transcription to Open Turret.
-- Port the transcription noise and music filtering (`transcriber/src/vad.ts`,
-  `pitch.ts`, `segmenter.ts`) back to CallRaven.
-- External PBX lines / shared line appearances are **out of scope here**;
-  they belong to Open Turret.
+Planned work, open questions and known bugs are tracked in
+[GitHub issues](https://github.com/chrisnock-personal/parley/issues).
