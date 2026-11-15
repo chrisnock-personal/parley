@@ -333,19 +333,26 @@ function PersonCard({ person, anchor, online, talking, groups, keyButton, callab
 }
 
 // A titled, collapsible section of a group card -collapsed by default.
-function Section({ title, badge, actions, children }: {
-  title: string; badge?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode;
+function Section({ title, badge, actions, className, children }: {
+  title: string; badge?: React.ReactNode; actions?: React.ReactNode; className?: string; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className={`card-section${open ? ' open' : ''}`}>
+    <div className={`card-section${className ? ` ${className}` : ''}${open ? ' open' : ''}`}>
       <div className="card-section-headrow">
         <button className="card-section-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
           <span>{title}</span>
           {badge}
-          <span className="chevron"><Icon name="chevron" /></span>
+          {!actions && <span className="chevron"><Icon name="chevron" /></span>}
         </button>
+        {/* With actions (read aloud), the chevron still goes last, on the
+            right like every other section; it toggles too. */}
         {actions}
+        {actions && (
+          <button className="card-section-chevron" onClick={() => setOpen((v) => !v)} tabIndex={-1} aria-hidden="true">
+            <span className="chevron"><Icon name="chevron" /></span>
+          </button>
+        )}
       </div>
       {open && <div className="card-section-body">{children}</div>}
     </div>
@@ -733,7 +740,8 @@ function ConversationSection({ button, selfExt, hasNew, onSeen, ra }: {
       transcribe={transcribe} chat={chat} onSeen={onSeen} fill={fill} readingId={ra.readingId} />
   );
   const badge = hasNew ? <span className="new-badge">new</span> : null;
-  const toggle = chat ? <ReadAloudToggle ra={ra} /> : null;
+  // Icon only: the card's "Read aloud" tag already says when it's on.
+  const toggle = chat ? <ReadAloudToggle ra={ra} compact /> : null;
   if (!narrow) return <><Section title={title} badge={badge} actions={toggle}>{panel(false)}</Section><ReadAloudQueue ra={ra} /></>;
   return (
     <div className="card-section">
@@ -795,43 +803,28 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
   // Talkers first, so they stay visible when the stack is cut off at STACK_MAX.
   const people = [...(participants ?? [])].sort((x, y) => Number(y.talking) - Number(x.talking));
   const talkers = people.filter((p) => p.talking).map((p) => p.name);
+  // One or two talkers by name after a mic icon, then a count (the full
+  // list is the title). "talking" as a word didn't fit a 336 px card.
+  const talkingText = talkers.length <= 2 ? talkers.join(', ') : `${talkers.length} talking`;
   const mode = button.target_group_ptt_default ? 'PTT' : 'open mic';
 
   return (
     <div className={`card group-card${live ? ' is-live' : joined ? ' is-pending' : ''}`}>
+      {/* Header: name and one status line, the call timer and the star. The
+          tags get their own row below and the people sit in the Participants
+          row, so nothing here wraps however many are on (issue #4). */}
       <div className="card-head">
         <ActivityLight state={state} />
         <div className="card-title">
           <div className="card-name">
             <span className="card-name-text" title={buttonLabel(button)}>{buttonLabel(button)}</span>
           </div>
-          {/* Tags sit on this line, not beside the name: next to the name they
-              squeezed short group names ("Production") down to an ellipsis. */}
-          <div className="card-sub">
-            {recording && <RecTag title="Someone in this group is being recorded, so the group's audio is recorded" />}
-            {button.target_group_transcribe_enabled && <span className="info-tag" title="Speech in this group is transcribed and kept">Transcribed</span>}
-            {button.target_group_chat_enabled && <span className="info-tag" title="This group has a typed chat">Chat</span>}
-            {button.target_group_chat_enabled && ra.on && TTS_AVAILABLE && (
-              <span className="info-tag ra-tag" title={joined ? 'Typed messages are read aloud' : 'Typed messages will be read aloud once you join'}>
-                {joined ? 'Read aloud' : 'Read aloud when joined'}
-              </span>
-            )}
-            <span>
-              {GROUP_PREFIX}{button.target_group_dial_code} · {mode} · {joined ? (live ? 'joined' : state.status) : 'not joined'}
-              {state.onHold ? ' · on hold' : ''}
-            </span>
+          {/* State first: on a narrow card the dial code is what gets cut. */}
+          <div className="card-status-line">
+            {joined ? (live ? 'joined' : state.status) : 'not joined'}{state.onHold ? ' · on hold' : ''} · {mode} · {GROUP_PREFIX}{button.target_group_dial_code}
           </div>
         </div>
         {live && state.connectedAt && <CallTimer since={state.connectedAt} />}
-        {people.length > 0
-          ? (
-            <span className="avatar-stack" title={people.map((p) => p.name + (p.talking ? ' (talking)' : '')).join(', ')}
-              aria-label={`${people.length} in group${talkers.length ? `, talking: ${talkers.join(', ')}` : ''}`}>
-              {people.slice(0, STACK_MAX).map((p) => <Avatar key={p.extension} name={p.name} id={p.extension} talking={p.talking} openable />)}
-              {people.length > STACK_MAX && <span className="avatar more">+{people.length - STACK_MAX}</span>}
-            </span>
-          )
-          : <span className="nobody">nobody here</span>}
         {onCollapse && (
           <button className="card-collapse" onClick={onCollapse} title="Show less" aria-label={`Show less of ${buttonLabel(button)}`}>
             <Icon name="chevron" />
@@ -839,6 +832,18 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
         )}
         <StarButton name={buttonLabel(button)} on={button.favourite} onToggle={onToggleFavourite} />
       </div>
+      {(recording || button.target_group_transcribe_enabled || button.target_group_chat_enabled) && (
+        <div className="card-tags">
+          {recording && <RecTag title="Someone in this group is being recorded, so the group's audio is recorded" />}
+          {button.target_group_transcribe_enabled && <span className="info-tag" title="Speech in this group is transcribed and kept">Transcribed</span>}
+          {button.target_group_chat_enabled && <span className="info-tag" title="This group has a typed chat">Chat</span>}
+          {button.target_group_chat_enabled && ra.on && TTS_AVAILABLE && (
+            <span className="info-tag ra-tag" title={joined ? 'Typed messages are read aloud' : 'Typed messages will be read aloud once you join'}>
+              {joined ? 'Read aloud' : 'Read aloud when joined'}
+            </span>
+          )}
+        </div>
+      )}
 
       {joined && <VolumeRow slot={slot} state={state} actions={actions} />}
 
@@ -872,7 +877,18 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
       )}
 
       {participants && (
-        <Section title={`Participants · ${people.length}`}>
+        <Section title={`Participants · ${people.length}`} className={people.length > 0 ? 'participants-section' : undefined}
+          badge={people.length > 0 && (
+            <>
+              <span className="avatar-stack" aria-hidden="true">
+                {people.slice(0, STACK_MAX).map((p) => <Avatar key={p.extension} name={p.name} id={p.extension} size={24} talking={p.talking} />)}
+                {people.length > STACK_MAX && <span className="avatar more" style={{ width: 24, height: 24 }}>+{people.length - STACK_MAX}</span>}
+              </span>
+              <span className="talking-text" title={talkers.length ? `Talking: ${talkers.join(', ')}` : undefined}>
+                {talkers.length > 0 && <><Icon name="mic" size={12} /> {talkingText}</>}
+              </span>
+            </>
+          )}>
           {people.length === 0
             ? <div className="participants-empty">Nobody in this group</div>
             : people.map((p) => (

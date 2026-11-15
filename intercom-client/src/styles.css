@@ -194,6 +194,21 @@ input[type=checkbox] { accent-color: var(--accent); }
    them on a narrow card rather than squeezing anything. */
 .card-sub { font-size: 12px; color: var(--dim); margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .is-live .card-sub { color: var(--live); }
+/* Group cards: one status line under the name; tags on their own row,
+   lined up with the name (activity light 10px + gap 12px). */
+.card-status-line { font-size: 12px; color: var(--dim); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.is-live .card-status-line { color: var(--live); }
+.card-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 8px; padding-left: 22px; }
+.card-tags .rec-tag, .card-tags .info-tag { margin-left: 0; }
+/* The Participants head carries the avatar stack and who's talking. */
+.participants-section .card-section-head > span:first-child { flex: none; }
+.participants-section .card-section-head .avatar-stack { margin-left: 4px; }
+.participants-section .avatar-stack .avatar + .avatar { margin-left: -6px; }
+.participants-section .talking-text {
+  flex: 1; min-width: 0; text-align: left; text-transform: none; letter-spacing: 0; font-size: 12px;
+  color: var(--talk); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.participants-section .talking-text svg { vertical-align: -2px; }
 .call-idle-icon {
   width: 40px; height: 40px; border-radius: 50%; background: var(--surface-2); color: var(--dim);
   display: inline-flex; align-items: center; justify-content: center; flex: none;
@@ -518,6 +533,8 @@ input[type=checkbox] { accent-color: var(--accent); }
 /* ---- Read chat messages aloud (migration 017) ---- */
 .card-section-headrow { display: flex; align-items: center; gap: 8px; }
 .card-section-headrow .card-section-head { flex: 1; min-width: 0; }
+.card-section-chevron { flex: none; display: inline-flex; padding: 0; border: none; background: transparent; color: var(--dim); }
+.card-section-chevron:hover:not(:disabled) { color: var(--text); background: transparent; }
 .ra-btn {
   flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px;
   border-radius: var(--r-btn); border: 1px solid var(--line-2); background: transparent;
@@ -526,6 +543,9 @@ input[type=checkbox] { accent-color: var(--accent); }
 .ra-btn.on { border-color: var(--accent); color: var(--accent); }
 .ra-btn.compact { width: 44px; height: 44px; padding: 0; justify-content: center; border-color: transparent; }
 .ra-btn.compact.on { border-color: transparent; }
+/* In a card's Conversation row: no taller than the row itself. */
+.card-section-headrow .ra-btn.compact { width: 36px; height: 36px; margin: -4px 0; }
+.ra-btn.compact:hover:not(:disabled) { background: var(--surface-2); }
 .ra-tag { border-color: var(--accent) !important; color: var(--accent) !important; }
 .tile-ra { display: inline-flex; color: var(--accent); flex: none; }
 .ra-queue { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--accent); }
