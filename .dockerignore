@@ -1,0 +1,11 @@
+# Build context for controller-backend and controller-frontend (context: .).
+# Each image installs its own dependencies and builds its own output; a
+# local node_modules or dist copied in by `COPY controller/frontend/ .` or
+# `COPY intercom-client/ .` would overwrite them (issue #18).
+**/node_modules
+**/dist
+.git
+.env
+.env.*
+CLAUDE.md
+docs

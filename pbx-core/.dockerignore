@@ -1,0 +1,3 @@
+# Each image installs and builds its own (issue #18).
+node_modules
+dist
