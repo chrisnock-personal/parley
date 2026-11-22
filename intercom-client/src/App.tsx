@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, createContext, useContext } from 'react';
 import { DevicePrefs, DeviceSettings, loadDevicePrefs, saveDevicePrefs } from './devices';
+import { HotkeyOverrides, HotkeyRow, Keycap, KeyboardSettings, hotkeyRows, isCapturing, isTypingTarget, loadHotkeys, saveHotkeys } from './hotkeys';
 import { api, Button, ChatMessage, DirectoryEntry, GroupParticipant, IntercomClientSession, LatestIds, LiveState, TranscriptLine } from './api';
 import { createIntercomClientUa, targetUri } from './sipUa';
 import { markSvg, PRODUCT_NAME } from '../../brand/mark';
@@ -455,7 +456,8 @@ function loadIcmTab(): IcmTab {
 // The Intercom section: a call card (who you're on with, mic / hold / hang up,
 // auto-answer, volume) beside the ICM keys as large panel keys. Press a key to
 // call that person; press the live key (or Hang up) to end it.
-function IcmSection({ state, actions, keys, directory, lineUp, recording, online, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress, onCall }: {
+function IcmSection({ state, actions, keys, directory, lineUp, recording, online, autoAnswer, onToggleAutoAnswer, onHold, onHangup, onPress, onCall, keyFor = () => null }: {
+  keyFor?: (ext: string) => string | null; // keyboard shortcut per intercom key (issue #6)
   state: SlotState; actions: SlotActions; keys: Button[]; directory: DirectoryEntry[]; lineUp: boolean; recording: boolean; online: string[];
   onCall: (extension: string, name: string) => void;
   autoAnswer: boolean; onToggleAutoAnswer: () => void; onHold: () => void; onHangup: () => void; onPress: (b: Button) => void;
@@ -529,7 +531,7 @@ function IcmSection({ state, actions, keys, directory, lineUp, recording, online
               {/* Presence: green filled = online (registered), red ring = offline.
                   Shape differs as well as colour, for colour-blind users. */}
               <span className={`key-presence ${isOnline ? 'online' : 'offline'}`} title={isOnline ? 'Online' : 'Offline'} aria-hidden="true" />
-              <span className="key-meta">ICM {b.target_extension}{isActive ? ' · LIVE' : ''}</span>
+              <span className="key-meta">ICM {b.target_extension}{isActive ? ' · LIVE' : ''} <Keycap code={keyFor(b.target_extension!)} /></span>
               <span className="key-who">
                 <Avatar name={buttonLabel(b)} id={b.target_extension!} size={30} />
                 <span className="key-name">{buttonLabel(b)}</span>
@@ -790,7 +792,9 @@ const STACK_MAX = 4;
 // receive-only and is brought in by itself while a talker is in the group.
 const isListenOnly = (b: Button) => b.target_group_mode === 'announce';
 const isListener = (b: Button) => isListenOnly(b) && !b.can_talk;
-function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, hasNew, onSeen, ra, onPttHeld, onToggleJoin, onToggleFavourite, onCollapse, autoJoined = false }: {
+function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, hasNew, onSeen, ra, onPttHeld, onToggleJoin, onToggleFavourite, onCollapse, autoJoined = false, hotkey = null, keyTalking = false }: {
+  hotkey?: string | null; // its keyboard shortcut (issue #6)
+  keyTalking?: boolean; // being talked to by a held key
   button: Button; state: SlotState; actions: SlotActions; lineUp: boolean; recording: boolean;
   participants: GroupParticipant[] | undefined; selfExt: string; onToggleJoin: () => void;
   hasNew: boolean; onSeen: (kind: keyof LatestIds, id: string) => void;
@@ -834,6 +838,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
         <div className="card-title">
           <div className="card-name">
             <span className="card-name-text" title={buttonLabel(button)}>{buttonLabel(button)}</span>
+            <Keycap code={hotkey} />
           </div>
           {/* State first: on a narrow card the dial code is what gets cut. */}
           <div className="card-status-line">
@@ -897,7 +902,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
             )}
           </div>
           <button
-            className={`ptt-wide${pttHeld ? ' held' : ''}`}
+            className={`ptt-wide${pttHeld || keyTalking ? ' held' : ''}`}
             disabled={consoleMuted || (!state.muted && !pttHeld)}
             onPointerDown={(e) => {
               if (!state.muted) return;
@@ -909,7 +914,8 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
             onPointerUp={releasePtt}
             onPointerCancel={releasePtt}
           >
-            {consoleMuted ? 'Push To Talk is off while you\'re muted' : pttHeld ? 'Talking…' : state.muted ? 'Push To Talk' : 'Mic latched open'}
+            {consoleMuted ? 'Push To Talk is off while you\'re muted' : pttHeld || keyTalking ? 'Talking…' : state.muted ? 'Push To Talk' : 'Mic latched open'}
+            {!consoleMuted && state.muted && <Keycap code={hotkey} />}
           </button>
         </>
       )}
@@ -947,7 +953,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
         <p className="card-note">Joins by itself when one of the people who talk here is in the group. You can't talk in it.</p>
       )}
       <button className={joined ? 'card-leave' : 'card-join'} disabled={!joined && !lineUp} onClick={onToggleJoin}>
-        {joined ? 'Leave' : listener ? 'Listen now' : 'Join'}
+        {joined ? 'Leave' : listener ? 'Listen now' : 'Join'} <Keycap code={hotkey} shift={joined} />
       </button>
       {listener && joined && autoJoined && (
         <p className="card-note">Leave stops this page for you: you'll be brought in again by the next one.</p>
@@ -959,8 +965,9 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
 // A group you haven't joined, as a small tile: who's in it, whether anyone
 // is talking, its tags, and Join. Clicking the tile (not Join) opens the
 // full card, for its participants and transcript.
-function GroupTile({ button, participants, recording, lineUp, hasNew, onJoin, onOpen, onToggleFavourite }: {
+function GroupTile({ button, participants, recording, lineUp, hasNew, onJoin, onOpen, onToggleFavourite, hotkey = null }: {
   button: Button; participants: GroupParticipant[] | undefined; recording: boolean; lineUp: boolean; hasNew: boolean;
+  hotkey?: string | null;
   onJoin: () => void; onOpen: () => void; onToggleFavourite: () => void;
 }) {
   const people = [...(participants ?? [])].sort((x, y) => Number(y.talking) - Number(x.talking));
@@ -994,7 +1001,7 @@ function GroupTile({ button, participants, recording, lineUp, hasNew, onJoin, on
       </button>
       <StarButton name={name} on={button.favourite} onToggle={onToggleFavourite} />
       </div>
-      <button className="card-join tile-join" disabled={!lineUp} onClick={onJoin}>Join</button>
+      <button className="card-join tile-join" disabled={!lineUp} onClick={onJoin}>Join <Keycap code={hotkey} /></button>
     </div>
   );
 }
@@ -1065,7 +1072,8 @@ function ReadAloudSettings({ prefs, onChange, groups }: {
   );
 }
 
-function ProfileMenu({ name, extension, lineStatus, recorded, groups, hasPhoto, onPhotoChanged, raPrefs, onRaPrefs, raGroups, devicePrefs, onDevicePrefs }: {
+function ProfileMenu({ name, extension, lineStatus, recorded, groups, hasPhoto, onPhotoChanged, raPrefs, onRaPrefs, raGroups, devicePrefs, onDevicePrefs, keyboard }: {
+  keyboard?: React.ReactNode;
   name: string; extension: string; lineStatus: string; recorded: boolean; groups: string[];
   devicePrefs: DevicePrefs; onDevicePrefs: (p: DevicePrefs) => void;
   hasPhoto: boolean; onPhotoChanged: () => void;
@@ -1131,6 +1139,7 @@ function ProfileMenu({ name, extension, lineStatus, recorded, groups, hasPhoto, 
           </div>
           <DeviceSettings prefs={devicePrefs} onChange={onDevicePrefs} />
           <ReadAloudSettings prefs={raPrefs} onChange={onRaPrefs} groups={raGroups} />
+          {keyboard}
         </div>
       )}
     </div>
@@ -1223,6 +1232,29 @@ export default function App() {
   const leftPage = useRef<Set<string>>(new Set());
   const setRaPrefs = (p: ReadAloudPrefs) => { setRaPrefsState(p); savePrefs(p); };
   const pttHeldSlots = useRef(new Set<string>());
+  // Keyboard shortcuts (issue #6): this device's changes to the default keys,
+  // which groups are being talked to by a held key (for the cards' "Talking…"),
+  // and the latest of everything the key handler needs, set on each render.
+  const [hotkeyOverrides, setHotkeyOverridesState] = useState<HotkeyOverrides>(loadHotkeys);
+  const setHotkeyOverrides = useCallback((o: HotkeyOverrides) => { saveHotkeys(o); setHotkeyOverridesState(o); }, []);
+  const [keyTalking, setKeyTalking] = useState<Set<string>>(() => new Set());
+  const hotkeyCtx = useRef<{ rows: HotkeyRow[]; onKey: (code: string, down: boolean, shift: boolean) => boolean; releaseAll: () => void } | null>(null);
+  useEffect(() => {
+    const handle = (e: KeyboardEvent, down: boolean) => {
+      const ctx = hotkeyCtx.current;
+      if (!ctx || isCapturing() || isTypingTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (down && e.repeat) { if (ctx.rows.some((r) => r.key === e.code)) e.preventDefault(); return; }
+      if (ctx.onKey(e.code, down, e.shiftKey)) e.preventDefault();
+    };
+    const kd = (e: KeyboardEvent) => handle(e, true);
+    const ku = (e: KeyboardEvent) => handle(e, false);
+    // Losing focus mid-press would leave a mic open: release everything.
+    const blur = () => hotkeyCtx.current?.releaseAll();
+    window.addEventListener('keydown', kd);
+    window.addEventListener('keyup', ku);
+    window.addEventListener('blur', blur);
+    return () => { window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); window.removeEventListener('blur', blur); };
+  }, []);
   const readAloud = useReadAloud({
     eligible: (session?.buttons ?? [])
       .filter((b) => b.button_type === 'group' && b.read_aloud && b.target_group_chat_enabled
@@ -1568,6 +1600,70 @@ export default function App() {
   const fullGroups = groupButtons.filter((b) => fullRank(b) < 3)
     .map((b, i) => ({ b, i })).sort((x, y) => fullRank(x.b) - fullRank(y.b) || x.i - y.i).map((x) => x.b);
   const tileGroups = groupButtons.filter((b) => fullRank(b) === 3);
+
+  // Keyboard shortcuts: current keys, and what each does right now.
+  const hkRows = hotkeyRows(
+    groupButtons.map((b) => ({ code: b.target_group_dial_code!, name: buttonLabel(b) })),
+    directButtons.map((b) => ({ ext: b.target_extension!, name: buttonLabel(b) })), hotkeyOverrides);
+  const keyFor = (id: string) => hkRows.find((r) => r.id === id)?.key ?? null;
+  const canTalkIn = (b: Button) => {
+    const code = b.target_group_dial_code!;
+    return !isListener(b) && slotStates[lineSlot(code)]?.status === 'connected'
+      && !(participants?.[code] ?? []).some((p) => p.extension === session.extension && p.muted);
+  };
+  const keyTalk = (codes: string[], on: boolean) => {
+    for (const code of codes) {
+      managerRef.current.setMuted(lineSlot(code), !on);
+      if (on) pttHeldSlots.current.add(code); else pttHeldSlots.current.delete(code);
+    }
+    setKeyTalking((prev) => { const n = new Set(prev); for (const c of codes) { if (on) n.add(c); else n.delete(c); } return n; });
+  };
+  hotkeyCtx.current = {
+    rows: hkRows,
+    releaseAll: () => { if (keyTalking.size) keyTalk([...keyTalking], false); },
+    onKey: (code, down, shift) => {
+      const row = hkRows.find((r) => r.key === code);
+      if (!row) return false;
+      const a = row.action;
+      if (a.kind === 'group') {
+        const b = groupButtons.find((x) => x.target_group_dial_code === a.code);
+        if (!b) return false;
+        const joined = isJoined(b);
+        if (!down) { if (keyTalking.has(a.code)) keyTalk([a.code], false); return true; }
+        if (shift) { if (joined) joinOrLeave(b); return true; }
+        if (!joined) { if (lineUp) joinOrLeave(b); return true; }
+        // Hold to talk: only opens a mic that's muted, so a latched-open mic
+        // isn't shut when the key is let go.
+        if (canTalkIn(b) && slotStates[lineSlot(a.code)]?.muted) keyTalk([a.code], true);
+        return true;
+      }
+      if (a.kind === 'talkAll') {
+        if (down) {
+          const codes = groupButtons.filter((b) => canTalkIn(b) && slotStates[lineSlot(b.target_group_dial_code!)]?.muted)
+            .map((b) => b.target_group_dial_code!);
+          if (codes.length) keyTalk(codes, true);
+        } else if (keyTalking.size) keyTalk([...keyTalking], false);
+        return true;
+      }
+      if (!down) return true;
+      if (a.kind === 'icm') {
+        const b = directButtons.find((x) => x.target_extension === a.ext);
+        if (b && (lineUp || icm.counterpart === a.ext)) handleDirectPress(b);
+        return true;
+      }
+      if (a.kind === 'answer') {
+        if (incoming) answerIncoming();
+        else if (icm.status !== 'idle') managerRef.current.hangup(ICM_SLOT);
+        return true;
+      }
+      if (a.kind === 'hold') { if (icm.status === 'connected') managerRef.current.setHold(ICM_SLOT, !icm.onHold); return true; }
+      if (a.kind === 'muteAll') {
+        for (const slot of Object.keys(slotStates)) if (slotStates[slot].status !== 'idle') managerRef.current.setMuted(slot, true);
+        return true;
+      }
+      return false;
+    },
+  };
   const setOpenGroup = (code: string, open: boolean) => setOpenGroups((prev) => {
     const next = new Set(prev);
     if (open) next.add(code); else next.delete(code);
@@ -1656,6 +1752,7 @@ export default function App() {
             hasPhoto={!!live.avatars[session.extension]} onPhotoChanged={() => setPollTick((t) => t + 1)}
             raPrefs={raPrefs} onRaPrefs={setRaPrefs}
             devicePrefs={devicePrefs} onDevicePrefs={setDevicePrefs}
+            keyboard={<KeyboardSettings rows={hkRows} overrides={hotkeyOverrides} onChange={setHotkeyOverrides} />}
             raGroups={groupButtons.filter((b) => b.read_aloud && b.target_group_chat_enabled).map(buttonLabel)} />
           <span className={`line-status line-${lineStatus}`}>
             {lineStatus === 'registered' ? '● line up' : lineStatus === 'connecting' ? '○ connecting…' : '✕ line down -retrying'}
@@ -1715,6 +1812,7 @@ export default function App() {
               onHangup={() => managerRef.current.hangup(ICM_SLOT)}
               onPress={handleDirectPress}
               onCall={callExtension}
+              keyFor={(ext) => keyFor(`i:${ext}`)}
             />
         </section>
 
@@ -1739,7 +1837,8 @@ export default function App() {
                     onToggleJoin={() => joinOrLeave(b)}
                     onToggleFavourite={() => setFavourite(b, !b.favourite)}
                     onCollapse={state.status === 'idle' && !b.favourite ? () => setOpenGroup(b.target_group_dial_code!, false) : undefined}
-                    autoJoined={autoJoined.current.has(b.target_group_dial_code!)} />
+                    autoJoined={autoJoined.current.has(b.target_group_dial_code!)}
+                    hotkey={keyFor(`g:${b.target_group_dial_code}`)} keyTalking={keyTalking.has(b.target_group_dial_code!)} />
                 );
               })}
             </div>
@@ -1753,7 +1852,7 @@ export default function App() {
                     recording={live.recording.groups.includes(b.target_group_dial_code!)} lineUp={lineUp}
                     hasNew={hasNew(b)}
                     onJoin={() => joinOrLeave(b)} onOpen={() => setOpenGroup(b.target_group_dial_code!, true)}
-                    onToggleFavourite={() => setFavourite(b, true)} />
+                    onToggleFavourite={() => setFavourite(b, true)} hotkey={keyFor(`g:${b.target_group_dial_code}`)} />
                 ))}
               </div>
             </>

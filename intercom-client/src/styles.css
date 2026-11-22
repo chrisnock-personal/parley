@@ -579,3 +579,17 @@ input[type=checkbox] { accent-color: var(--accent); }
 .ra-check { display: flex; gap: 8px; align-items: flex-start; }
 .ra-check input { margin-top: 3px; }
 .ra-settings > button { align-self: flex-start; }
+
+/* Keyboard shortcuts (issue #6): keycaps on the controls, and the profile
+   menu's Keyboard section. */
+.keycap {
+  display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 600; line-height: 18px;
+  min-width: 12px; padding: 0 6px; margin-left: 6px; text-align: center; vertical-align: middle;
+  color: var(--text); background: var(--surface-2); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 5px;
+}
+.ptt-wide .keycap { color: inherit; background: rgba(0, 0, 0, 0.12); border-color: rgba(0, 0, 0, 0.25); }
+.card-name .keycap { margin-left: 0; flex: none; }
+.kb-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 13px; }
+.kb-what { color: var(--text); min-width: 0; }
+.kb-key { flex: none; font-family: var(--mono); font-size: 12px; min-width: 52px; padding: 3px 8px; border-radius: 6px; }
+.kb-key.waiting { border: 1px dashed var(--accent); color: var(--accent); }

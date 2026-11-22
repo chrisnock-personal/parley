@@ -127,6 +127,13 @@ extension + password). Two themes: a graphite **Panel** and a warmer
 **Warm**. On a phone the cards stack into one column and a group's
 conversation opens full screen.
 
+**Keyboard shortcuts**: each group has a key (1-9, 0, in the order of your
+groups): tap it to join, hold it to talk, Shift+key to leave. Intercom keys
+are F1-F12, Enter answers or hangs up, H holds, Space talks to all joined
+groups and M mutes you everywhere. Keys show as keycaps on the cards, are
+changed in the profile menu's Keyboard section (saved per device), and
+never act while you're typing or with Ctrl/Alt/Cmd held.
+
 **Microphone and speakers** are chosen per browser in the profile menu,
 with a live level bar and a test sound. A change applies at once, to calls
 already up as well (the microphone is swapped without renegotiating). If the
