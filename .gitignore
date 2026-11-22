@@ -1,2 +1,7 @@
 /CLAUDE.md
 .env
+.env.bak*
+# Dependencies and build output: the images install and build their own
+# (issue #17).
+node_modules/
+dist/
