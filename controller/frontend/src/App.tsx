@@ -142,6 +142,7 @@ export default function App() {
         {error && <div className="error-banner c-banner">{error}<button className="c-linkbtn" onClick={() => setError(null)}>Dismiss</button></div>}
         {current === 'live' && (
           <LivePage users={users} groups={groups} registrations={registrations} calls={calls} talking={talking} liveError={liveError}
+            canEdit={canEdit} onChanged={loadLive} onError={onError}
             onOpenPerson={(id) => { setOpenPerson(id); setView('people'); }} />
         )}
         {current === 'people' && (

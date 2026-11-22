@@ -25,6 +25,7 @@ interface RawCallInfo {
   to: string;
   startedAt: number;
   recording?: boolean;
+  muted?: { by: string; at: number }; // group calls: muted from the console (issue #9)
 }
 
 export interface LiveRegistration {
@@ -44,6 +45,7 @@ export interface LiveCall {
   toName: string;
   startedAt: string;
   recording: boolean;  // a SIP-REC session is running for this call right now
+  muted: { by: string; at: string } | null; // group calls: muted from the console, by whom and since when
 }
 
 function extOf(aor: string): string {
@@ -83,7 +85,22 @@ export async function getLiveStatus(): Promise<{ registrations: LiveRegistration
     toName: c.kind === 'group' ? (nameByDialCode.get(c.to) ?? c.to) : (nameByExt.get(c.to) ?? c.to),
     startedAt: new Date(c.startedAt).toISOString(),
     recording: !!c.recording,
+    muted: c.muted ? { by: c.muted.by, at: new Date(c.muted.at).toISOString() } : null,
   }));
 
   return { registrations, calls };
+}
+
+/** Remote mute (issue #9): mute or unmute someone in a group. pbx-core keeps
+ * it until unmuted and blocks their media now if they're in the group. */
+export async function setMute(group: string, extension: string, muted: boolean, by: string): Promise<{ applied: number }> {
+  const resp = await fetch(`${config.pbxBaseUrl}/mute`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(5000),
+    headers: { Authorization: `Bearer ${config.internalToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ group, extension, muted, by }),
+  });
+  const body = await resp.json().catch(() => ({})) as { applied?: number; error?: string };
+  if (!resp.ok) throw new Error(`pbx-core mute HTTP ${resp.status}: ${body.error ?? ''}`);
+  return { applied: body.applied ?? 0 };
 }

@@ -2,13 +2,22 @@
 // who's in it and who's talking, direct calls, and everyone's online state.
 // From pbx-core's in-memory state (via /live), polled by App.
 import { useEffect, useState } from 'react';
-import { DirectoryUser, Group, LiveCall, LiveRegistration, LiveTalking } from './api';
+import { api, DirectoryUser, Group, LiveCall, LiveRegistration, LiveTalking } from './api';
 import { Avatar, since } from './ui';
 
-export default function LivePage({ users, groups, registrations, calls, talking, liveError, onOpenPerson }: {
+export default function LivePage({ users, groups, registrations, calls, talking, liveError, onOpenPerson, canEdit, onChanged, onError }: {
   users: DirectoryUser[]; groups: Group[]; registrations: LiveRegistration[]; calls: LiveCall[]; talking: LiveTalking[];
   liveError: string | null; onOpenPerson: (id: string) => void;
+  canEdit: boolean; onChanged: () => void; onError: (m: string) => void;
 }) {
+  // Groups opened to show their people (and the Mute buttons, issue #9).
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const [busy, setBusy] = useState<string | null>(null);
+  const toggleOpen = (code: string) => setOpen((s) => { const n = new Set(s); if (n.has(code)) n.delete(code); else n.add(code); return n; });
+  const mute = async (code: string, ext: string, muted: boolean) => {
+    setBusy(`${code}/${ext}`);
+    try { await api.setMute(code, ext, muted); onChanged(); } catch (e) { onError((e as Error).message); } finally { setBusy(null); }
+  };
   const [, setTick] = useState(0);
   useEffect(() => { const t = window.setInterval(() => setTick((x) => x + 1), 1000); return () => window.clearInterval(t); }, []);
 
@@ -42,8 +51,11 @@ export default function LivePage({ users, groups, registrations, calls, talking,
             <h2 className="c-h2">Groups in use</h2>
             {inUse.map(({ g, members }) => {
               const talkers = talkingIn(g.dial_code);
+              const mutedCount = members.filter((m) => m.muted).length;
+              const isOpen = open.has(g.dial_code);
               return (
-                <div key={g.id} className="c-live-row">
+                <div key={g.id}>
+                <div className="c-live-row">
                   <div className="c-grow">
                     <div><strong>{g.name}</strong> <span className="c-mono">*8{g.dial_code}</span></div>
                     <div className="c-tags">
@@ -55,7 +67,31 @@ export default function LivePage({ users, groups, registrations, calls, talking,
                   <span className="c-stack">
                     {members.map((m) => <Avatar key={m.callId} name={m.fromName} id={m.from} talking={talkers.includes(m.from)} />)}
                   </span>
-                  <span className="c-mono c-live-note">{members.length} in{talkers.length ? ` · ${talkers.map(nameOf).join(', ')} talking` : ''}</span>
+                  <span className="c-mono c-live-note">{members.length} in{talkers.length ? ` · ${talkers.map(nameOf).join(', ')} talking` : ''}{mutedCount ? ` · ${mutedCount} muted` : ''}</span>
+                  <button className="c-btn small" aria-expanded={isOpen} onClick={() => toggleOpen(g.dial_code)}>{isOpen ? 'Hide people' : 'People'}</button>
+                </div>
+                {isOpen && (
+                  <div className="c-live-members">
+                    {members.map((m) => {
+                      const k = `${g.dial_code}/${m.from}`;
+                      const talkingNow = talkers.includes(m.from);
+                      return (
+                        <div key={m.callId} className={`c-live-member${m.muted ? ' muted' : ''}`}>
+                          <Avatar name={m.fromName} id={m.from} talking={talkingNow} />
+                          <span className="c-grow">{m.fromName}{' '}
+                            {m.muted
+                              ? <span className="c-muted-note">muted by {m.muted.by} · {since(m.muted.at)}</span>
+                              : <span className="c-mono">{talkingNow ? 'talking' : `${m.from} · ${since(m.startedAt)}`}</span>}
+                          </span>
+                          <button className={`c-btn small${m.muted ? ' danger' : ''}`} disabled={!canEdit || busy === k}
+                            title={canEdit ? undefined : 'Editors and admins only'}
+                            onClick={() => void mute(g.dial_code, m.from, !m.muted)}>{m.muted ? 'Unmute' : 'Mute'}</button>
+                        </div>
+                      );
+                    })}
+                    <p className="c-help c-live-help">Muted people still hear the group, and stay muted if they leave and rejoin, until someone unmutes them. Recorded in the audit log.</p>
+                  </div>
+                )}
                 </div>
               );
             })}

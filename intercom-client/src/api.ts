@@ -63,6 +63,7 @@ export interface GroupParticipant {
   extension: string;
   name: string;
   talking: boolean; // speaking right now (transcriber's per-member voice tap)
+  muted?: boolean; // muted from the console (issue #9): still hears, can't be heard
 }
 
 export interface IntercomClientSession {

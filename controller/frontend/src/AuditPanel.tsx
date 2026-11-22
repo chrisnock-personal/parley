@@ -66,6 +66,7 @@ export function describe(e: AuditLogEntry, groups: Group[]): string {
     else if (k === 'action' && v === 'reset-password') parts.push('password reset');
     else if (k === 'added_button') parts.push('a group or key added');
     else if (k === 'removed_button') parts.push('a group or key removed');
+    else if (k === 'muted') parts.push(`${m.member ?? 'someone'} ${v ? 'muted' : 'unmuted'}`);
     else if (k === 'can_talk') parts.push(`${m.holder ?? 'someone'} ${v ? 'can talk' : 'listens only'}`);
     else if (k === 'avatar') parts.push(v === 'removed' ? 'photo removed' : 'photo changed');
   }

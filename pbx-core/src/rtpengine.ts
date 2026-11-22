@@ -133,6 +133,16 @@ export async function del(callId: string, fromTag: string) {
 // goes back via "subscribe answer". Used by siprec.ts. The transcriber
 // service drives the same commands itself for group members' voices.
 
+/** Remote mute (issue #9): stop forwarding the media a call's party sends
+ * (block media from that from-tag), or start again. */
+export async function setBlocked(callId: string, fromTag: string, blocked: boolean): Promise<void> {
+  const opts = { 'call-id': callId, 'from-tag': fromTag };
+  const res = blocked
+    ? await client.blockMedia(config.rtpengine.port, config.rtpengine.host, opts)
+    : await client.unblockMedia(config.rtpengine.port, config.rtpengine.host, opts);
+  if (res?.result !== 'ok') throw new Error(`rtpengine ${blocked ? 'block' : 'unblock'} media: ${res?.['error-reason'] || res?.result}`);
+}
+
 export interface Subscription { sdp: string; toTag: string }
 
 export async function subscribeRequest(callId: string, fromTags: string[], extraFlags: string[] = []): Promise<Subscription> {

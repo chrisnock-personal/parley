@@ -399,6 +399,13 @@ section.c-col .c-h2 { padding: 0; }
 .c-live-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-top: 1px solid #22272e; font-size: 13px; }
 .c-live-row .c-tags { margin-top: 4px; }
 .c-live-note { width: 170px; text-align: right; }
+/* Remote mute (issue #9): a group's people, opened from Live. */
+.c-live-members { border-top: 1px solid #22272e; background: #171a1e; }
+.c-live-member { display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 28px; font-size: 13px; }
+.c-live-member + .c-live-member { border-top: 1px solid #1e2228; }
+.c-live-member.muted { background: #1d1a1a; }
+.c-muted-note { color: var(--red); font-size: 12px; }
+.c-live-help { margin: 0; padding: 8px 16px 12px 28px; }
 .c-stack { display: flex; }
 .c-stack .c-avatar { border: 2px solid var(--panel); margin-left: -6px; }
 .c-stack .c-avatar:first-child { margin-left: 0; }

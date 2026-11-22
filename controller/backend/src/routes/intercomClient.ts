@@ -89,13 +89,13 @@ router.get('/groups/participants', requireIntercomClientAuth, async (req, res, n
       for (const t of body.talking) talking.add(`${t.group}/${t.extension}`);
     } catch { /* transcriber down: nobody shows as talking */ }
     const me = req.intercomClientUser!.extension;
-    const participants: Record<string, { extension: string; name: string; talking: boolean }[]> = {};
+    const participants: Record<string, { extension: string; name: string; talking: boolean; muted: boolean }[]> = {};
     const recordingGroups = new Set<string>();
     let icmRecording = false;
     for (const code of mine) participants[code] = [];
     for (const c of live.calls) {
       if (c.kind === 'group' && mine.has(c.to)) {
-        participants[c.to].push({ extension: c.from, name: c.fromName, talking: talking.has(`${c.to}/${c.from}`) });
+        participants[c.to].push({ extension: c.from, name: c.fromName, talking: talking.has(`${c.to}/${c.from}`), muted: !!c.muted });
         // Any member's recorded leg includes the group mix, so everyone's
         // voice in that group is being recorded.
         if (c.recording) recordingGroups.add(c.to);

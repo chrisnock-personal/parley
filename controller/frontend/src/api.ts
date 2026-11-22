@@ -156,6 +156,7 @@ export interface LiveCall {
   toName: string;
   startedAt: string;
   recording?: boolean;
+  muted?: { by: string; at: string } | null; // group calls: muted from the console (issue #9)
 }
 
 export interface LiveTalking { group: string; extension: string }
@@ -230,6 +231,9 @@ export const api = {
     });
   },
   listSessions() { return req<IntercomSession[]>('/intercom/sessions'); },
+  setMute(group: string, extension: string, muted: boolean) {
+    return req<{ ok: boolean; applied: number }>('/live/mute', { method: 'POST', body: JSON.stringify({ group, extension, muted }) });
+  },
   getLiveStatus() { return req<{ registrations: LiveRegistration[]; calls: LiveCall[]; talking?: LiveTalking[] }>('/live'); },
   listSessionParticipants(id: string) {
     return req<SessionParticipant[]>(`/intercom/sessions/${id}/participants`);

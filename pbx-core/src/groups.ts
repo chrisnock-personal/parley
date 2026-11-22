@@ -28,6 +28,7 @@ import * as rtp from './rtpengine';
 import { sdpMode } from './sdpInspect';
 import { wireReinviteHandling } from './reinvite';
 import { watchLegs } from './liveness';
+import * as mutes from './mutes';
 import { extOf } from './registrar';
 import * as calls from './calls';
 import { startRecordingIfEnabled } from './siprec';
@@ -116,6 +117,10 @@ export function registerGroupIntercom(srf: Srf) {
         startedAt: Date.now(),
       });
       pokeTranscriber();
+      // Muted from the console before (or while away): still muted (issue #9).
+      if (mutes.get(groupCode, memberExt)) {
+        rtp.setBlocked(callId, fromTag, true).catch((e) => console.error(`[mute] reapplying for ${memberExt} in ${groupCode} failed:`, e?.message || e));
+      }
 
       // Real hold/resume on a group leg (e.g. an intercom client member holding their
       // own line) -see reinvite.ts / intercom.ts's identical wiring.

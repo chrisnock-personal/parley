@@ -801,6 +801,8 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
 }) {
   const slot = lineSlot(button.target_group_dial_code!);
   const listener = isListener(button);
+  // Muted from the console (issue #9): the server blocks this person's audio.
+  const consoleMuted = (participants ?? []).some((p) => p.extension === selfExt && p.muted);
   const joined = state.status !== 'idle';
   const live = state.status === 'connected';
   const [pttHeld, setPttHeld] = useState(false);
@@ -870,20 +872,33 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
         </button>
       )}
 
+      {live && !listener && consoleMuted && (
+        <div className="muted-banner" role="status">
+          <Icon name="micOff" size={16} />
+          <span><b>The console has muted you in this group.</b> You can still hear everyone. You'll be able to talk again when they unmute you.</span>
+        </div>
+      )}
+
       {live && !listener && (
         <>
           <div className="card-pair">
             <button className={`act-btn${state.listenMuted ? ' off' : ' on'}`} onClick={() => actions.setListenMuted(slot, !state.listenMuted)}>
               <Icon name={state.listenMuted ? 'volumeOff' : 'volume'} /> {state.listenMuted ? 'Listen off' : 'Listening'}
             </button>
-            <button className={`act-btn${state.muted && !pttHeld ? ' off' : ' on'}`} onClick={() => actions.setMuted(slot, !state.muted)}
-              title={state.muted ? 'Click to latch the mic open' : 'Click to mute'}>
-              <Icon name={state.muted && !pttHeld ? 'micOff' : 'mic'} /> {state.muted && !pttHeld ? 'Mic muted' : 'Mic open'}
-            </button>
+            {consoleMuted ? (
+              <button className="act-btn off" disabled title="The console has muted you in this group">
+                <Icon name="micOff" /> Muted by console
+              </button>
+            ) : (
+              <button className={`act-btn${state.muted && !pttHeld ? ' off' : ' on'}`} onClick={() => actions.setMuted(slot, !state.muted)}
+                title={state.muted ? 'Click to latch the mic open' : 'Click to mute'}>
+                <Icon name={state.muted && !pttHeld ? 'micOff' : 'mic'} /> {state.muted && !pttHeld ? 'Mic muted' : 'Mic open'}
+              </button>
+            )}
           </div>
           <button
             className={`ptt-wide${pttHeld ? ' held' : ''}`}
-            disabled={!state.muted && !pttHeld}
+            disabled={consoleMuted || (!state.muted && !pttHeld)}
             onPointerDown={(e) => {
               if (!state.muted) return;
               e.currentTarget.setPointerCapture(e.pointerId);
@@ -894,7 +909,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
             onPointerUp={releasePtt}
             onPointerCancel={releasePtt}
           >
-            {pttHeld ? 'Talking…' : state.muted ? 'Push To Talk' : 'Mic latched open'}
+            {consoleMuted ? 'Push To Talk is off while you\'re muted' : pttHeld ? 'Talking…' : state.muted ? 'Push To Talk' : 'Mic latched open'}
           </button>
         </>
       )}
@@ -915,10 +930,10 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
           {people.length === 0
             ? <div className="participants-empty">Nobody in this group</div>
             : people.map((p) => (
-              <div key={p.extension} className={`person-row${p.extension === selfExt ? ' self' : ''}${p.talking ? ' talking' : ''}`}>
+              <div key={p.extension} className={`person-row${p.extension === selfExt ? ' self' : ''}${p.talking ? ' talking' : ''}${p.muted ? ' muted' : ''}`}>
                 <Avatar name={p.name} id={p.extension} size={26} talking={p.talking} openable />
                 <span className="person-name">{p.name}{p.extension === selfExt ? ' (you)' : ''}</span>
-                <span className="person-ext">{p.talking ? 'talking' : p.extension}</span>
+                <span className="person-ext">{p.muted ? <><Icon name="micOff" size={12} /> muted</> : p.talking ? 'talking' : p.extension}</span>
               </div>
             ))}
         </Section>

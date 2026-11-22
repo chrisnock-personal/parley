@@ -148,6 +148,12 @@ are greyed out with the reason.
   talking, direct calls, and what's being recorded, straight from
   pbx-core's in-memory state (pbx-core's admin `/status`, enriched with
   names by the controller).
+  **Remote mute:** open a group's people and **Mute** anyone in it
+  (editors and admins, audited). pbx-core has rtpengine stop forwarding
+  their audio, so nobody hears it and it isn't transcribed; they still hear
+  the group, their client says the console has muted them, and Push To
+  Talk is off. A mute stays if they leave and rejoin, until someone unmutes
+  them (kept in pbx-core's memory, so a pbx-core restart clears it).
 - **People**: everyone with a client login. Name, extension, login on/off,
   Record calls (admin only), their groups and ICM keys, password reset.
 - **Groups**: talk mode, Transcribe and Chat, who has the group (give it to
