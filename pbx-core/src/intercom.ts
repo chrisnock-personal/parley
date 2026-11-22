@@ -8,6 +8,7 @@ import * as rtp from './rtpengine';
 import { lookup, aorKey, extOf, Binding } from './registrar';
 import { sdpMode } from './sdpInspect';
 import { wireReinviteHandling } from './reinvite';
+import { watchLegs } from './liveness';
 import * as calls from './calls';
 import { startRecordingIfEnabled } from './siprec';
 
@@ -69,7 +70,8 @@ export function registerDirectIntercom(srf: Srf) {
         { tag: 'callee', aor: `sip:${calleeExt}@${config.sipRealm}`, name: calleeExt, extension: calleeExt },
       ]);
 
-      const teardown = () => { recording.stop(); rtp.del(callId, fromTag); calls.end(callId); };
+      let stopWatching = () => {};
+      const teardown = () => { stopWatching(); recording.stop(); rtp.del(callId, fromTag); calls.end(callId); };
       // When one leg hangs up, hang up the other. Both can end at nearly the
       // same moment (e.g. a member leaves just as FreeSWITCH drops them), and
       // then the second destroy() targets a dialog drachtio has already
@@ -78,6 +80,15 @@ export function registerDirectIntercom(srf: Srf) {
       const hangUp = (dlg: any) => dlg.destroy().catch(() => { /* already gone */ });
       uas.on('destroy', () => { hangUp(uac); teardown(); });
       uac.on('destroy', () => { hangUp(uas); teardown(); });
+      // A browser that vanished without BYE (crash, sleep, lost network):
+      // hang up both legs ourselves, or it stays in as a ghost (liveness.ts).
+      stopWatching = watchLegs([
+        ...(callerMode === 'webrtc' ? [{ dlg: uas, label: callerExt }] : []),
+        ...(calleeMode === 'webrtc' ? [{ dlg: uac, label: calleeExt }] : []),
+      ], (who, why) => {
+        console.log(`[liveness] ${callId}: ${who} has gone (${why}); ending the call`);
+        hangUp(uas); hangUp(uac); teardown();
+      });
 
       // Live-view bookkeeping (console's "Live" tab, client participant
       // lists) -not used for any routing decision. See calls.ts.

@@ -39,6 +39,13 @@ export const config = {
   // (compose sets it from RTPENGINE_PUBLIC_IP), PBX_SIP_PORT drachtio's
   // UDP/TCP SIP port (entrypoint.sh).
   ownContact: `<sip:pbx-core@${process.env.PBX_SIP_HOST || '127.0.0.1'}:${process.env.PBX_SIP_PORT || '5063'}>`,
+  // Ending calls whose browser has gone (liveness.ts, issue #15): an
+  // in-dialog OPTIONS to each browser leg every LIVENESS_MS (0 = off); gone
+  // after LIVENESS_MISSES unanswered in a row (each waited LIVENESS_TIMEOUT_MS),
+  // or at once if it can't be delivered.
+  livenessMs: parseInt(process.env.LIVENESS_MS || '15000', 10),
+  livenessTimeoutMs: parseInt(process.env.LIVENESS_TIMEOUT_MS || '8000', 10),
+  livenessMisses: parseInt(process.env.LIVENESS_MISSES || '2', 10),
   // Dial-plan conventions for the prototype.
   //   direct intercom : dial a registered AOR/extension directly
   //   group intercom  : dial an id in the GROUP_PREFIX namespace (Phase 2)

@@ -197,6 +197,11 @@ Seven compose services: `postgres`, `controller-backend`,
   direct and group routing, re-INVITE handling, SIP-REC), not a
   general-purpose PBX. It authenticates every REGISTER and INVITE with SIP
   digest auth and checks the caller is who the `From` says.
+  It also notices a browser that has gone without hanging up (a crash, a
+  closed lid, lost Wi-Fi): every 15 s it sends each browser leg an OPTIONS
+  inside the call, and ends the call when that can't be delivered or goes
+  unanswered twice (`LIVENESS_MS`, `LIVENESS_TIMEOUT_MS`, `LIVENESS_MISSES`;
+  `LIVENESS_MS=0` turns it off).
 - **rtpengine anchors all media**, so calls work across routed networks
   where devices can't reach each other, and bridges the browsers' WebRTC
   (DTLS-SRTP, ICE-lite) to plain RTP for FreeSWITCH, including two WebRTC
