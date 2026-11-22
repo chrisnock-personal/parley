@@ -1,6 +1,6 @@
 {
   "name": "parley-controller",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Intercom controller -users, audit, endpoints, health, session orchestration",
   "main": "dist/index.js",
   "scripts": {
