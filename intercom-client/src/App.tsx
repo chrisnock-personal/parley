@@ -749,9 +749,15 @@ function ConversationSection({ button, selfExt, hasNew, onSeen, ra }: {
       <div className="card-section-headrow">
         <button className="card-section-head" onClick={() => setSheet(true)}>
           <span>{title}</span>{badge}
-          <span className="chevron open-right"><Icon name="chevron" /></span>
+          {!toggle && <span className="chevron open-right"><Icon name="chevron" /></span>}
         </button>
+        {/* The arrow stays on the far right, as on the desktop card. */}
         {toggle}
+        {toggle && (
+          <button className="card-section-chevron" onClick={() => setSheet(true)} tabIndex={-1} aria-hidden="true">
+            <span className="chevron open-right"><Icon name="chevron" /></span>
+          </button>
+        )}
       </div>
       <ReadAloudQueue ra={ra} />
       {sheet && (
