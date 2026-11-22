@@ -47,15 +47,44 @@ export async function listGroupsSummary(): Promise<(Group & { holder_count: numb
 }
 
 /** Who has a button for this group (so it's on their intercom client). */
-export async function listGroupHolders(groupId: string): Promise<{ button_id: string; user_id: string; name: string; extension: string }[]> {
+export interface GroupHolder { button_id: string; user_id: string; name: string; extension: string; can_talk: boolean }
+
+export async function listGroupHolders(groupId: string): Promise<GroupHolder[]> {
   await getGroup(groupId);
-  const { rows } = await query<{ button_id: string; user_id: string; name: string; extension: string }>(
-    `SELECT b.id AS button_id, u.id AS user_id, u.name, u.extension
+  const { rows } = await query<GroupHolder>(
+    `SELECT b.id AS button_id, u.id AS user_id, u.name, u.extension, b.can_talk
        FROM intercom_directory_user_buttons b
        JOIN intercom_directory_users u ON u.id = b.directory_user_id
       WHERE b.target_group_id = $1
       ORDER BY u.name`, [groupId]);
   return rows;
+}
+
+/** Listen-only groups: whether this holder talks (issue #11). Returns the
+ * holder's name for the audit entry. */
+export async function setHolderCanTalk(groupId: string, buttonId: string, canTalk: boolean): Promise<GroupHolder> {
+  const row = await queryOne<GroupHolder>(
+    `UPDATE intercom_directory_user_buttons b SET can_talk = $3
+       FROM intercom_directory_users u
+      WHERE b.id = $2 AND b.target_group_id = $1 AND u.id = b.directory_user_id
+      RETURNING b.id AS button_id, u.id AS user_id, u.name, u.extension, b.can_talk`,
+    [groupId, buttonId, canTalk]);
+  if (!row) throw createError('Not a holder of this group', 404);
+  return row;
+}
+
+/** Extensions that talk in each listen-only group, by dial code. */
+export async function talkersByDialCode(dialCodes: string[]): Promise<Record<string, string[]>> {
+  if (!dialCodes.length) return {};
+  const { rows } = await query<{ dial_code: string; extension: string }>(
+    `SELECT g.dial_code, u.extension
+       FROM intercom_directory_user_buttons b
+       JOIN intercom_groups g ON g.id = b.target_group_id
+       JOIN intercom_directory_users u ON u.id = b.directory_user_id
+      WHERE g.mode = 'announce' AND b.can_talk AND g.dial_code = ANY($1)`, [dialCodes]);
+  const out: Record<string, string[]> = {};
+  for (const r of rows) (out[r.dial_code] ??= []).push(r.extension);
+  return out;
 }
 
 export async function getGroup(id: string): Promise<Group> {

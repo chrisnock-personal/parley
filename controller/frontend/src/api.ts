@@ -44,7 +44,7 @@ export interface Group {
   holder_count?: number; // people with a button for it (list only)
 }
 
-export interface GroupHolder { button_id: string; user_id: string; name: string; extension: string }
+export interface GroupHolder { button_id: string; user_id: string; name: string; extension: string; can_talk: boolean }
 
 export interface GroupMember {
   id: string;
@@ -246,6 +246,9 @@ export const api = {
     return req(`/groups/${id}`, { method: 'DELETE' });
   },
   listGroupHolders(groupId: string) { return req<GroupHolder[]>(`/groups/${groupId}/holders`); },
+  setHolderCanTalk(groupId: string, buttonId: string, canTalk: boolean) {
+    return req<GroupHolder>(`/groups/${groupId}/holders/${buttonId}`, { method: 'PATCH', body: JSON.stringify({ can_talk: canTalk }) });
+  },
   listGroupMembers(groupId: string) { return req<GroupMember[]>(`/groups/${groupId}/members`); },
   addGroupMember(groupId: string, endpointId: string, role: 'member' | 'announcer' = 'member', canTalk = true) {
     return req<GroupMember>(`/groups/${groupId}/members`, {

@@ -46,6 +46,8 @@ export interface DirectoryUserButton {
   sort_order: number;
   favourite: boolean; // group buttons: always shown as a full card in the client (migration 015)
   read_aloud: boolean; // group buttons: the client reads typed messages aloud while joined (migration 017)
+  can_talk: boolean; // group buttons in a listen-only group: this person talks; everyone else listens (migration 018)
+  target_group_mode: 'talkback' | 'announce' | null; // 'announce' = listen only (issue #11)
 }
 
 const PUBLIC_COLUMNS = 'id, name, extension, enabled, siprec_enabled, created_at, updated_at';
@@ -189,8 +191,9 @@ export async function listButtons(directoryUserId: string): Promise<DirectoryUse
             g.ptt_default AS target_group_ptt_default,
             g.transcribe_enabled AS target_group_transcribe_enabled,
             g.chat_enabled AS target_group_chat_enabled,
+            g.mode AS target_group_mode,
             t.name AS target_name,
-            b.label, b.sort_order, b.favourite, b.read_aloud
+            b.label, b.sort_order, b.favourite, b.read_aloud, b.can_talk
      FROM intercom_directory_user_buttons b
      LEFT JOIN intercom_groups g ON g.id = b.target_group_id
      LEFT JOIN intercom_directory_users t ON b.button_type = 'direct' AND t.extension = b.target_extension

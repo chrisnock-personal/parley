@@ -88,8 +88,14 @@ export class CallManager {
   private states: SlotStates = { [ICM_SLOT]: idleSlot() };
   private listeners = new Set<Listener>();
   private activityTimer: number | null = null;
+  // Chosen microphone and speaker (issue #7): device ids from
+  // enumerateDevices, per browser (devices.ts). null = the browser's default.
+  private micId: string | null = null;
+  private speakerId: string | null = null;
+  private micPresent = false; // the chosen mic is plugged in right now
 
   constructor(private onCallEvent?: (evt: CallEventPayload) => void) {
+    navigator.mediaDevices?.addEventListener?.('devicechange', () => { void this.refreshMicPresence(); });
     for (let i = 0; i < AUDIO_POOL_SIZE; i++) {
       const el = new Audio();
       el.autoplay = true;
@@ -131,6 +137,7 @@ export class CallManager {
       el = this.audioPool.pop() ?? Object.assign(new Audio(), { autoplay: true });
       this.audioEls.set(slot, el);
     }
+    this.applySink(el);
     const st = this.getState(slot);
     el.muted = st.listenMuted;
     el.volume = st.volume;
@@ -316,19 +323,76 @@ export class CallManager {
     else session.unhold();
   }
 
+  // Microphone constraint for new calls: the chosen device, `exact`
+  // (Chromium ignores an `ideal` deviceId whenever a default exists), but
+  // only while it's plugged in, so an unplugged headset falls back to the
+  // default instead of failing the call.
+  private audioConstraint(): MediaTrackConstraints | boolean {
+    return this.micId && this.micPresent ? { deviceId: { exact: this.micId } } : true;
+  }
+
+  private async refreshMicPresence(): Promise<void> {
+    if (!this.micId) { this.micPresent = false; return; }
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      this.micPresent = devices.some((d) => d.kind === 'audioinput' && d.deviceId === this.micId);
+    } catch {
+      this.micPresent = false;
+    }
+  }
+
+  private applySink(el: HTMLAudioElement) {
+    const withSink = el as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
+    if (!withSink.setSinkId) return;
+    withSink.setSinkId(this.speakerId ?? '').catch((err) => console.warn(`[audio] speaker choice failed: ${err.message}`));
+  }
+
+  /** Speakers: every call's playback, now and from here on. */
+  setSpeaker(id: string | null): void {
+    this.speakerId = id;
+    for (const el of [...this.audioEls.values(), ...this.audioPool]) this.applySink(el);
+  }
+
+  /** Microphone: new calls use it, and calls already up switch to it
+   * (replaceTrack: no renegotiation), keeping each call's mute state. */
+  async setMic(id: string | null): Promise<void> {
+    this.micId = id;
+    await this.refreshMicPresence();
+    for (const session of this.sessions.values()) {
+      const pc: RTCPeerConnection | undefined = session.connection;
+      const sender = pc?.getSenders().find((x) => x.track && x.track.kind === 'audio');
+      if (!sender || !sender.track) continue; // a listen-only call sends nothing
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: this.audioConstraint(), video: false });
+        const track = stream.getAudioTracks()[0];
+        const old = sender.track;
+        track.enabled = old.enabled;
+        await sender.replaceTrack(track);
+        old.stop();
+      } catch (err) {
+        console.warn(`[audio] microphone switch failed: ${(err as Error).message}`);
+      }
+    }
+  }
+
   /** Dial out on a slot. Tears down whatever's already there first.
    * `initialMuted` seeds a group's PTT default (see App.tsx) -direct calls
    * never pass this, always starting talking. */
-  dial(ua: any, slot: SlotId, target: string, label: string, callMeta: CallMeta, initialMuted = false): void {
+  dial(ua: any, slot: SlotId, target: string, label: string, callMeta: CallMeta, initialMuted = false, listenOnly = false): void {
     this.hangup(slot);
-    const session = ua.call(target, { mediaConstraints: { audio: true, video: false } });
+    // Listen only (a listener in a listen-only group, issue #11): no
+    // microphone at all, and an offer to receive audio only, so nothing is
+    // sent and the browser never asks for the mic.
+    const session = listenOnly
+      ? ua.call(target, { mediaConstraints: { audio: false, video: false }, rtcOfferConstraints: { offerToReceiveAudio: true } })
+      : ua.call(target, { mediaConstraints: { audio: this.audioConstraint(), video: false } });
     this.wireSession(slot, session, label, callMeta, initialMuted);
   }
 
   /** Answer an incoming session on a slot. Tears down whatever's there first. */
   answer(slot: SlotId, session: any, label: string, callMeta: CallMeta): void {
     this.hangup(slot);
-    session.answer({ mediaConstraints: { audio: true, video: false } });
+    session.answer({ mediaConstraints: { audio: this.audioConstraint(), video: false } });
     this.wireSession(slot, session, label, callMeta);
   }
 

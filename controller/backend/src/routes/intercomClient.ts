@@ -9,6 +9,7 @@ import { recordIntercomClientCallStart, recordIntercomClientCallEnd } from '../s
 import { getLiveStatus } from '../services/pbxCoreService';
 import { listLines } from '../services/transcriptService';
 import { latestIds, listMessages, postMessage } from '../services/chatService';
+import { talkersByDialCode } from '../services/groupService';
 
 const router = Router();
 
@@ -110,9 +111,15 @@ router.get('/groups/participants', requireIntercomClientAuth, async (req, res, n
       latestIds(groupIds.map((b) => b.target_group_id!))]);
     const latest: Record<string, { chat: string | null; transcript: string | null }> = {};
     for (const b of groupIds) latest[b.target_group_dial_code!] = latestById[b.target_group_id!];
+    // Listen-only groups: who talks, so a listener's client can join by
+    // itself while one of them is in the group (issue #11).
+    const talkers = await talkersByDialCode(buttons
+      .filter((b) => b.target_group_mode === 'announce' && b.target_group_dial_code)
+      .map((b) => b.target_group_dial_code!));
     res.json({
       participants,
       latest,
+      talkers,
       online: live.registrations.map((r) => r.extension),
       avatars: await avatarVersions(),
       recording: {

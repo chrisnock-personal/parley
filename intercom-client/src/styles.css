@@ -547,6 +547,13 @@ input[type=checkbox] { accent-color: var(--accent); }
 .card-section-headrow .ra-btn.compact { width: 36px; height: 36px; margin: -4px 0; }
 .ra-btn.compact:hover:not(:disabled) { background: var(--surface-2); }
 .ra-tag { border-color: var(--accent) !important; color: var(--accent) !important; }
+/* Listen-only groups (issue #11) */
+.talk-tag { border-color: var(--talk) !important; color: var(--talk) !important; }
+.card-note { margin: 0; font-size: 12px; color: var(--dim); line-height: 1.4; }
+/* Microphone and speakers (issue #7) */
+.dev-meter { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.dev-meter i { display: block; height: 100%; background: var(--live); border-radius: 3px; transition: width 80ms linear; }
+.dev-settings + .ra-settings { margin-top: 4px; }
 .tile-ra { display: inline-flex; color: var(--accent); flex: none; }
 .ra-queue { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--accent); }
 .ra-queue span { flex: 1; }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, createContext, useContext } from 'react';
+import { DevicePrefs, DeviceSettings, loadDevicePrefs, saveDevicePrefs } from './devices';
 import { api, Button, ChatMessage, DirectoryEntry, GroupParticipant, IntercomClientSession, LatestIds, LiveState, TranscriptLine } from './api';
 import { createIntercomClientUa, targetUri } from './sipUa';
 import { markSvg, PRODUCT_NAME } from '../../brand/mark';
@@ -778,15 +779,22 @@ function ConversationSection({ button, selfExt, hasNew, onSeen, ra }: {
 // To Talk. Then collapsible Participants and (for transcribed groups)
 // Transcript, and Join / Leave at the bottom.
 const STACK_MAX = 4;
-function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, hasNew, onSeen, ra, onPttHeld, onToggleJoin, onToggleFavourite, onCollapse }: {
+// Listen-only groups (mode 'announce', issue #11): the people whose button
+// has can_talk talk, push to talk; everyone else is a listener, who joins
+// receive-only and is brought in by itself while a talker is in the group.
+const isListenOnly = (b: Button) => b.target_group_mode === 'announce';
+const isListener = (b: Button) => isListenOnly(b) && !b.can_talk;
+function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, hasNew, onSeen, ra, onPttHeld, onToggleJoin, onToggleFavourite, onCollapse, autoJoined = false }: {
   button: Button; state: SlotState; actions: SlotActions; lineUp: boolean; recording: boolean;
   participants: GroupParticipant[] | undefined; selfExt: string; onToggleJoin: () => void;
   hasNew: boolean; onSeen: (kind: keyof LatestIds, id: string) => void;
   ra: ReadAloudCtl; onPttHeld: (held: boolean) => void;
   onToggleFavourite: () => void;
   onCollapse?: () => void; // an unjoined group opened from its tile: shrink it back
+  autoJoined?: boolean; // a listener brought in by a talker (listen-only groups)
 }) {
   const slot = lineSlot(button.target_group_dial_code!);
+  const listener = isListener(button);
   const joined = state.status !== 'idle';
   const live = state.status === 'connected';
   const [pttHeld, setPttHeld] = useState(false);
@@ -806,7 +814,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
   // One or two talkers by name after a mic icon, then a count (the full
   // list is the title). "talking" as a word didn't fit a 336 px card.
   const talkingText = talkers.length <= 2 ? talkers.join(', ') : `${talkers.length} talking`;
-  const mode = button.target_group_ptt_default ? 'PTT' : 'open mic';
+  const mode = isListenOnly(button) ? (listener ? 'listen only' : 'you talk') : button.target_group_ptt_default ? 'PTT' : 'open mic';
 
   return (
     <div className={`card group-card${live ? ' is-live' : joined ? ' is-pending' : ''}`}>
@@ -821,7 +829,7 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
           </div>
           {/* State first: on a narrow card the dial code is what gets cut. */}
           <div className="card-status-line">
-            {joined ? (live ? 'joined' : state.status) : 'not joined'}{state.onHold ? ' · on hold' : ''} · {mode} · {GROUP_PREFIX}{button.target_group_dial_code}
+            {joined ? (live ? (listener ? 'listening' : 'joined') : state.status) : 'not joined'}{state.onHold ? ' · on hold' : ''} · {mode} · {GROUP_PREFIX}{button.target_group_dial_code}
           </div>
         </div>
         {live && state.connectedAt && <CallTimer since={state.connectedAt} />}
@@ -832,9 +840,12 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
         )}
         <StarButton name={buttonLabel(button)} on={button.favourite} onToggle={onToggleFavourite} />
       </div>
-      {(recording || button.target_group_transcribe_enabled || button.target_group_chat_enabled) && (
+      {(recording || isListenOnly(button) || button.target_group_transcribe_enabled || button.target_group_chat_enabled) && (
         <div className="card-tags">
           {recording && <RecTag title="Someone in this group is being recorded, so the group's audio is recorded" />}
+          {isListenOnly(button) && (listener
+            ? <span className="info-tag" title="Only some people talk in this group; you listen">Listen only</span>
+            : <span className="info-tag talk-tag" title="A listen-only group: you're one of the people who talk">You talk</span>)}
           {button.target_group_transcribe_enabled && <span className="info-tag" title="Speech in this group is transcribed and kept">Transcribed</span>}
           {button.target_group_chat_enabled && <span className="info-tag" title="This group has a typed chat">Chat</span>}
           {button.target_group_chat_enabled && ra.on && TTS_AVAILABLE && (
@@ -847,7 +858,13 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
 
       {joined && <VolumeRow slot={slot} state={state} actions={actions} />}
 
-      {live && (
+      {live && listener && (
+        <button className={`act-btn${state.listenMuted ? ' off' : ' on'}`} onClick={() => actions.setListenMuted(slot, !state.listenMuted)}>
+          <Icon name={state.listenMuted ? 'volumeOff' : 'volume'} /> {state.listenMuted ? 'Listen off' : 'Listening'}
+        </button>
+      )}
+
+      {live && !listener && (
         <>
           <div className="card-pair">
             <button className={`act-btn${state.listenMuted ? ' off' : ' on'}`} onClick={() => actions.setListenMuted(slot, !state.listenMuted)}>
@@ -905,9 +922,15 @@ function GroupStrip({ button, state, actions, lineUp, participants, selfExt, rec
         <ConversationSection button={button} selfExt={selfExt} hasNew={hasNew} onSeen={onSeen} ra={ra} />
       )}
 
+      {listener && !joined && (
+        <p className="card-note">Joins by itself when one of the people who talk here is in the group. You can't talk in it.</p>
+      )}
       <button className={joined ? 'card-leave' : 'card-join'} disabled={!joined && !lineUp} onClick={onToggleJoin}>
-        {joined ? 'Leave' : 'Join'}
+        {joined ? 'Leave' : listener ? 'Listen now' : 'Join'}
       </button>
+      {listener && joined && autoJoined && (
+        <p className="card-note">Leave stops this page for you: you'll be brought in again by the next one.</p>
+      )}
     </div>
   );
 }
@@ -1021,8 +1044,9 @@ function ReadAloudSettings({ prefs, onChange, groups }: {
   );
 }
 
-function ProfileMenu({ name, extension, lineStatus, recorded, groups, hasPhoto, onPhotoChanged, raPrefs, onRaPrefs, raGroups }: {
+function ProfileMenu({ name, extension, lineStatus, recorded, groups, hasPhoto, onPhotoChanged, raPrefs, onRaPrefs, raGroups, devicePrefs, onDevicePrefs }: {
   name: string; extension: string; lineStatus: string; recorded: boolean; groups: string[];
+  devicePrefs: DevicePrefs; onDevicePrefs: (p: DevicePrefs) => void;
   hasPhoto: boolean; onPhotoChanged: () => void;
   raPrefs: ReadAloudPrefs; onRaPrefs: (p: ReadAloudPrefs) => void; raGroups: string[];
 }) {
@@ -1084,6 +1108,7 @@ function ProfileMenu({ name, extension, lineStatus, recorded, groups, hasPhoto, 
             <div><span className="dim">Call recording</span><span>{recorded ? 'Your calls are recorded' : 'Off'}</span></div>
             <div><span className="dim">Groups</span><span>{groups.length ? groups.join(', ') : 'None'}</span></div>
           </div>
+          <DeviceSettings prefs={devicePrefs} onChange={onDevicePrefs} />
           <ReadAloudSettings prefs={raPrefs} onChange={onRaPrefs} groups={raGroups} />
         </div>
       )}
@@ -1166,6 +1191,15 @@ export default function App() {
   // Read aloud: voice settings per device; which groups is per button
   // (server). Push To Talk held anywhere pauses reading.
   const [raPrefs, setRaPrefsState] = useState<ReadAloudPrefs>(loadPrefs);
+  // Microphone and speakers for this browser (issue #7).
+  const [devicePrefs, setDevicePrefsState] = useState<DevicePrefs>(loadDevicePrefs);
+  const setDevicePrefs = (p: DevicePrefs) => { saveDevicePrefs(p); setDevicePrefsState(p); };
+  // Listen-only groups: who talks in each (dial code -> extensions), from the 1s poll.
+  const [talkers, setTalkers] = useState<Record<string, string[]>>({});
+  // Listen-only groups this listener was brought into by a talker, and ones
+  // they left during a page (not brought back until that page ends).
+  const autoJoined = useRef<Set<string>>(new Set());
+  const leftPage = useRef<Set<string>>(new Set());
   const setRaPrefs = (p: ReadAloudPrefs) => { setRaPrefsState(p); savePrefs(p); };
   const pttHeldSlots = useRef(new Set<string>());
   const readAloud = useReadAloud({
@@ -1230,6 +1264,7 @@ export default function App() {
         setParticipants(r.participants);
         setLive({ online: r.online, recording: r.recording, avatars: r.avatars ?? {} });
         setLatest(r.latest ?? {});
+        setTalkers(r.talkers ?? {});
       })
       .catch(() => { /* keep last known */ });
     poll();
@@ -1242,6 +1277,18 @@ export default function App() {
     if (!api.isLoggedIn()) return;
     api.me().then(setSession).catch(() => {});
   }, []);
+
+  // Pick up console changes to this user's groups and keys (a group given or
+  // taken away, switched to listen only, a talker added) without a re-login.
+  // Only replaces the session when something changed.
+  useEffect(() => {
+    if (!sessionExt) return;
+    const t = window.setInterval(() => {
+      api.me().then((fresh) => setSession((cur) => (cur && JSON.stringify(cur) !== JSON.stringify(fresh) ? fresh : cur)))
+        .catch(() => { /* keep what we have */ });
+    }, 30_000);
+    return () => window.clearInterval(t);
+  }, [sessionExt]);
 
   useEffect(() => {
     if (!session) return;
@@ -1386,19 +1433,57 @@ export default function App() {
 
   // Group line: join or leave. Each line has its own slot, so joining one
   // never disturbs another. A group's PTT default seeds the initial talk state.
+  const dialGroup = (b: Button) => {
+    const ua = uaRef.current;
+    if (!ua) return;
+    const code = b.target_group_dial_code!;
+    managerRef.current.dial(ua, lineSlot(code), targetUri(`${GROUP_PREFIX}${code}`), buttonLabel(b), {
+      kind: 'group', direction: 'outgoing', counterpartExtension: code,
+    }, isListenOnly(b) || !!b.target_group_ptt_default, isListener(b));
+  };
+
   const handleLineToggle = useCallback((b: Button) => {
     const ua = uaRef.current;
     if (!ua || !sessionRef.current) return;
     const code = b.target_group_dial_code!;
     const slot = lineSlot(code);
     if (managerRef.current.getState(slot).status !== 'idle') {
+      // Leaving a page you were brought into: not again until it ends.
+      if (autoJoined.current.delete(code)) leftPage.current.add(code);
       managerRef.current.hangup(slot);
       return;
     }
-    managerRef.current.dial(ua, slot, targetUri(`${GROUP_PREFIX}${code}`), buttonLabel(b), {
-      kind: 'group', direction: 'outgoing', counterpartExtension: code,
-    }, !!b.target_group_ptt_default);
-  }, []);
+    autoJoined.current.delete(code); // joined by hand: stays until left by hand
+    dialGroup(b);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Applies the device choice to calls now and from here on.
+  useEffect(() => {
+    managerRef.current.setSpeaker(devicePrefs.speakerId);
+    void managerRef.current.setMic(devicePrefs.micId);
+  }, [devicePrefs]);
+
+  // Listen-only groups (issue #11): a listener's client joins by itself
+  // while one of the group's talkers is in it, and leaves when they've all
+  // gone. One left during a page isn't rejoined until that page ends; one
+  // joined by hand is left alone.
+  useEffect(() => {
+    if (!session || lineStatus !== 'registered' || !participants) return;
+    for (const b of session.buttons) {
+      if (b.button_type !== 'group' || !b.target_group_dial_code || !isListener(b)) continue;
+      const code = b.target_group_dial_code;
+      const slot = lineSlot(code);
+      const talking = (participants[code] ?? []).some((p) => (talkers[code] ?? []).includes(p.extension));
+      const status = managerRef.current.getState(slot).status;
+      if (!talking) {
+        leftPage.current.delete(code);
+        if (autoJoined.current.delete(code) && status !== 'idle') managerRef.current.hangup(slot);
+      } else if (status === 'idle' && !autoJoined.current.has(code) && !leftPage.current.has(code)) {
+        autoJoined.current.add(code);
+        dialGroup(b);
+      }
+    }
+  }, [participants, talkers, lineStatus, session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const answerIncoming = useCallback(() => {
     if (!incoming) return;
@@ -1535,6 +1620,7 @@ export default function App() {
             recorded={live.recording.self} groups={groupButtons.map(buttonLabel)}
             hasPhoto={!!live.avatars[session.extension]} onPhotoChanged={() => setPollTick((t) => t + 1)}
             raPrefs={raPrefs} onRaPrefs={setRaPrefs}
+            devicePrefs={devicePrefs} onDevicePrefs={setDevicePrefs}
             raGroups={groupButtons.filter((b) => b.read_aloud && b.target_group_chat_enabled).map(buttonLabel)} />
           <span className={`line-status line-${lineStatus}`}>
             {lineStatus === 'registered' ? '● line up' : lineStatus === 'connecting' ? '○ connecting…' : '✕ line down -retrying'}
@@ -1617,7 +1703,8 @@ export default function App() {
                     onPttHeld={(held) => { const k = b.target_group_dial_code!; if (held) pttHeldSlots.current.add(k); else pttHeldSlots.current.delete(k); }}
                     onToggleJoin={() => joinOrLeave(b)}
                     onToggleFavourite={() => setFavourite(b, !b.favourite)}
-                    onCollapse={state.status === 'idle' && !b.favourite ? () => setOpenGroup(b.target_group_dial_code!, false) : undefined} />
+                    onCollapse={state.status === 'idle' && !b.favourite ? () => setOpenGroup(b.target_group_dial_code!, false) : undefined}
+                    autoJoined={autoJoined.current.has(b.target_group_dial_code!)} />
                 );
               })}
             </div>

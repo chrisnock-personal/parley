@@ -136,6 +136,7 @@ function GroupDetail({ group, users, inNow, talking, canEdit, isAdmin, onChanged
   const free = users.filter((u) => !holders.some((h) => h.user_id === u.id));
   const isTalking = (ext: string) => talking.some((t) => t.group === group.dial_code && t.extension === ext);
   const dirty = name.trim() !== group.name || dialCode.trim() !== group.dial_code;
+  const listenOnly = talkModeOf(group) === 'listen';
 
   return (
     <div className="c-detail-body">
@@ -155,7 +156,10 @@ function GroupDetail({ group, users, inNow, talking, canEdit, isAdmin, onChanged
       <div className="c-field">How people talk
         <TalkModePicker value={talkModeOf(group)} disabled={!canEdit || busy} onChange={(t) => update(talkModeFields(t))} />
       </div>
-      {talkModeOf(group) === 'listen' && <p className="c-help warn">Listen-only members aren't dialled out yet: today a listen-only group behaves like push to talk.</p>}
+      {listenOnly && (
+        <p className="c-help">Only the people marked <b className="c-talks-word">Talks</b> can talk (push to talk). Everyone else listens:
+          their client joins by itself while one of the talkers is in the group, and leaves when they've all gone.</p>
+      )}
 
       <div className="c-switches">
         <Switch label="Transcribe" help="What's said is written down, per speaker, readable without joining" checked={group.transcribe_enabled}
@@ -164,11 +168,19 @@ function GroupDetail({ group, users, inNow, talking, canEdit, isAdmin, onChanged
           disabled={!canEdit || busy} disabledReason="Editors and admins only" onChange={(v) => update({ chat_enabled: v })} />
       </div>
 
-      <div className="c-sec"><span>Who has this group</span><span className="c-sec-note">{holders.length} {holders.length === 1 ? 'person' : 'people'}</span></div>
+      <div className="c-sec"><span>Who has this group</span><span className="c-sec-note">{holders.length} {holders.length === 1 ? 'person' : 'people'}
+        {listenOnly && ` · ${holders.filter((h) => h.can_talk).length} talk`}</span></div>
       <div className="c-chips">
         {holders.map((h) => (
           <span key={h.button_id} className="c-chip with-avatar">
             <Avatar name={h.name} id={h.extension} size={22} />{h.name}
+            {listenOnly && (
+              <button type="button" className={`c-talks${h.can_talk ? ' on' : ''}`} aria-pressed={h.can_talk} disabled={!canEdit || busy}
+                title={h.can_talk ? `${h.name} can talk. Click to make them listen only` : `${h.name} listens. Click to let them talk`}
+                onClick={() => run(() => api.setHolderCanTalk(group.id, h.button_id, !h.can_talk))}>
+                <Icon name="mic" size={11} />{h.can_talk ? 'Talks' : 'Listens'}
+              </button>
+            )}
             {canEdit && <button aria-label={`Remove ${h.name}`} onClick={() => run(() => api.removeDirectoryUserButton(h.user_id, h.button_id))}><Icon name="x" size={12} /></button>}
           </span>
         ))}

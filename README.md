@@ -40,11 +40,18 @@ live in a sister project, **Open Turret** (`chrisnock-personal/open-turret`).
 
 ### Talk groups
 A group is a party line: everyone in it hears everyone else who's talking.
-Groups are **open mic**, **push to talk** or (not finished, see
-[#11](https://github.com/chrisnock-personal/parley/issues/11)) **listen only**. A user can be in any number at once, and each
-joined group has its own mic toggle, wide **Push To Talk** button, listen
-mute and volume. Muting and PTT happen in the browser (gating the local mic
-track), so they take effect at once with no signalling round trip.
+Groups are **open mic**, **push to talk** or **listen only**. A user can be
+in any number at once, and each joined group has its own mic toggle, wide
+**Push To Talk** button, listen mute and volume. Muting and PTT happen in the
+browser (gating the local mic track), so they take effect at once with no
+signalling round trip.
+
+A **listen-only** group is a paging zone. On the group's console page, the
+people marked **Talks** can talk (push to talk); everyone else listens. A
+listener's client joins by itself, receive-only (no microphone, nothing
+sent), while a talker is in the group, and leaves when they've all gone. A
+listener who leaves during a page isn't brought back until the next one;
+one who joins by hand (**Listen now**) stays until they leave.
 
 - **Who's in it and who's talking**, shown on every group card whether or
   not you've joined (from pbx-core's live call list, polled every second).
@@ -118,6 +125,13 @@ follow them to whichever device they log in on (a hot-desk login:
 extension + password). Two themes: a graphite **Panel** and a warmer
 **Warm**. On a phone the cards stack into one column and a group's
 conversation opens full screen.
+
+**Microphone and speakers** are chosen per browser in the profile menu,
+with a live level bar and a test sound. A change applies at once, to calls
+already up as well (the microphone is swapped without renegotiating). If the
+chosen microphone is unplugged, calls use the default. Safari on iPad and
+iPhone can't choose an output from a web page, so there the menu points to
+Control Centre instead.
 
 <p>
 <img src="docs/images/06-warm-theme.png" width="58%" alt="The client in the Warm theme">
@@ -325,9 +339,10 @@ must install it again.
    login.
 
 ### Testing a group (open-mic)
-1. Console → **Groups** → add a group (talk mode *Open mic* or *Push to
-   talk*; *Listen only* isn't finished). The dial code defaults to a slug
-   of the name. Tick *Transcribe* and/or *Chat* if wanted.
+1. Console → **Groups** → add a group (talk mode *Open mic*, *Push to
+   talk* or *Listen only*; for listen only, mark who **Talks** once people
+   have it). The dial code defaults to a slug of the name. Tick
+   *Transcribe* and/or *Chat* if wanted.
 2. Give it to people, either on the group's own page or on each person's
    page under **People**.
 3. Have a client press **Join** on the group: pbx-core routes

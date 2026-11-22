@@ -17,6 +17,8 @@ export interface Button {
   sort_order: number;
   favourite: boolean; // group buttons: shown as a full card, joined or not
   read_aloud: boolean; // group buttons: typed messages read aloud while joined
+  can_talk: boolean; // listen-only groups: this person talks; everyone else listens (issue #11)
+  target_group_mode: 'talkback' | 'announce' | null; // 'announce' = listen only
 }
 
 export interface TranscriptLine {
@@ -41,6 +43,7 @@ export interface LatestIds { chat: string | null; transcript: string | null }
 // What the client polls every second (GET /groups/participants).
 export interface LiveState {
   participants: Record<string, GroupParticipant[]>; // dial code -> who's in it
+  talkers?: Record<string, string[]>; // listen-only groups: dial code -> extensions that talk
   online: string[];                                  // registered extensions
   avatars: Record<string, number>;                   // extension -> photo version, for people with a photo
   latest?: Record<string, LatestIds>;                // dial code -> newest chat/transcript ids
