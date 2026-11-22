@@ -54,7 +54,8 @@ listener who leaves during a page isn't brought back until the next one;
 one who joins by hand (**Listen now**) stays until they leave.
 
 - **Who's in it and who's talking**, shown on every group card whether or
-  not you've joined (from pbx-core's live call list, polled every second).
+  not you've joined (from pbx-core's live call list, pushed to the client
+  within about half a second of a change; see Notes).
   The talking ring ignores music and held tones (a pitch check in the
   transcriber).
 - **Favourites**: star a group to keep it as a full card. Cards are joined
@@ -390,6 +391,14 @@ patches/
 ```
 
 ## Notes / knobs
+- **Live updates are pushed, not polled** (issue #12). controller-backend
+  runs one loop that reads pbx-core's status and the transcriber's
+  who's-talking every 500 ms for everybody, and streams each client's view
+  (`GET /api/v1/intercom-client/stream`) and the console's Live page
+  (`GET /api/v1/live/stream`) as server-sent events, only when it changes.
+  The browsers read them with `fetch()`, so the token stays in the
+  `Authorization` header. If a stream drops they poll the matching REST
+  route (every 1 s / 3 s) and reconnect on their own.
 - **SIP digest auth is on** for pbx-core's REGISTER/INVITE (RFC 2617/3261) —
   each directory user's intercom-client login password doubles as their SIP
   credential (pbx-core stores/checks a precomputed HA1 hash of it, never the

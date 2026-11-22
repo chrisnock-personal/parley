@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/session';
 import { audit } from '../services/auditService';
 import * as directoryUsers from '../services/directoryUserService';
+import { invalidateUsers } from '../services/liveHub';
 
 const router = Router();
 router.use(requireAuth);
@@ -32,6 +33,7 @@ router.patch('/:id', requireRole('admin', 'editor'), async (req, res, next) => {
     }
     const u = await directoryUsers.updateDirectoryUser(req.user!.email, req.params.id, req.body ?? {});
     await audit(req.user!.email, 'directory_user', u.id, 'update', req.body);
+    invalidateUsers();
     res.json(u);
   } catch (err) { next(err); }
 });
@@ -63,6 +65,7 @@ router.post('/:id/buttons', requireRole('admin', 'editor'), async (req, res, nex
   try {
     const b = await directoryUsers.addButton(req.params.id, req.body ?? {});
     await audit(req.user!.email, 'directory_user', req.params.id, 'update', { added_button: b.id });
+    invalidateUsers();
     res.status(201).json(b);
   } catch (err) { next(err); }
 });
@@ -71,6 +74,7 @@ router.delete('/:id/buttons/:buttonId', requireRole('admin', 'editor'), async (r
   try {
     await directoryUsers.removeButton(req.params.id, req.params.buttonId);
     await audit(req.user!.email, 'directory_user', req.params.id, 'update', { removed_button: req.params.buttonId });
+    invalidateUsers();
     res.json({ ok: true });
   } catch (err) { next(err); }
 });

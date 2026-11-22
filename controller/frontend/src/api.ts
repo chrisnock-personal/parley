@@ -1,3 +1,4 @@
+import { readStream } from './liveStream';
 // src/api.ts -thin fetch wrapper for the intercom controller API.
 const BASE = '/api/v1';
 
@@ -233,6 +234,11 @@ export const api = {
   listSessions() { return req<IntercomSession[]>('/intercom/sessions'); },
   setMute(group: string, extension: string, muted: boolean) {
     return req<{ ok: boolean; applied: number }>('/live/mute', { method: 'POST', body: JSON.stringify({ group, extension, muted }) });
+  },
+  /** Live status pushed whenever it changes (issue #12). */
+  liveStream(onData: (s: { registrations: LiveRegistration[]; calls: LiveCall[]; talking?: LiveTalking[] }) => void, signal: AbortSignal) {
+    if (!token) return Promise.reject(new Error('not logged in'));
+    return readStream<{ registrations: LiveRegistration[]; calls: LiveCall[]; talking?: LiveTalking[] }>(`${BASE}/live/stream`, token, onData, signal);
   },
   getLiveStatus() { return req<{ registrations: LiveRegistration[]; calls: LiveCall[]; talking?: LiveTalking[] }>('/live'); },
   listSessionParticipants(id: string) {

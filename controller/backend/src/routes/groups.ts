@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/session';
 import { audit } from '../services/auditService';
 import * as groups from '../services/groupService';
+import { invalidateUsers } from '../services/liveHub';
 
 const router = Router();
 router.use(requireAuth);
@@ -24,6 +25,7 @@ router.patch('/:id/holders/:buttonId', requireRole('admin', 'editor'), async (re
     if (typeof can_talk !== 'boolean') return res.status(400).json({ error: 'can_talk must be true or false' });
     const h = await groups.setHolderCanTalk(req.params.id, req.params.buttonId, can_talk);
     await audit(req.user!.email, 'group', req.params.id, 'update', { holder: h.name, can_talk });
+    invalidateUsers();
     res.json(h);
   } catch (err) { next(err); }
 });
@@ -44,6 +46,7 @@ router.patch('/:id', requireRole('admin', 'editor'), async (req, res, next) => {
   try {
     const g = await groups.updateGroup(req.user!.email, req.params.id, req.body ?? {});
     await audit(req.user!.email, 'group', g.id, 'update', req.body);
+    invalidateUsers();
     res.json(g);
   } catch (err) { next(err); }
 });

@@ -101,7 +101,15 @@ cp "$CA_CERT" /usr/share/nginx/ca.crt
 # HTTPS_PORT is the HOST-side TLS port, for the plain-HTTP server's
 # non-localhost redirect of /intercom-client/ (see nginx.conf).
 : "${HTTPS_PORT:?HTTPS_PORT must be set -the host port mapped to this container's 443}"
+# nginx re-resolves controller-backend per request (see nginx.conf) through
+# the container's own DNS server. nginx's resolver ignores resolv.conf's
+# search list, so under podman the name needs its dns.podman domain.
+RESOLVER=$(awk '/^nameserver/ { print $2; exit }' /etc/resolv.conf)
+case "$RESOLVER" in *:*) RESOLVER="[$RESOLVER]" ;; "") RESOLVER=127.0.0.11 ;; esac
+BACKEND_HOST=controller-backend
+grep -q '^search.*dns\.podman' /etc/resolv.conf && BACKEND_HOST=controller-backend.dns.podman
 sed -e "s/__PBX_HOST__/${PBX_HOST}/g" -e "s/__HTTPS_PORT__/${HTTPS_PORT}/g" \
+  -e "s/__RESOLVER__/${RESOLVER}/g" -e "s/__BACKEND_HOST__/${BACKEND_HOST}/g" \
   /etc/nginx/default.conf.template > /etc/nginx/conf.d/default.conf
 
 exec nginx -g 'daemon off;'

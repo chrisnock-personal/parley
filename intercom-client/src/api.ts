@@ -1,3 +1,4 @@
+import { readStream } from './liveStream';
 // src/api.ts -thin fetch wrapper for the intercom client's own controller endpoints.
 const BASE = '/api/v1/intercom-client';
 
@@ -150,6 +151,11 @@ export const api = {
   // dial code -> who's in that group right now (see the backend route).
   groupParticipants(): Promise<LiveState> {
     return req('/groups/participants');
+  },
+  /** The same view pushed whenever it changes (issue #12). */
+  liveStream(onData: (s: LiveState) => void, signal: AbortSignal): Promise<void> {
+    if (!token) return Promise.reject(new Error('not logged in'));
+    return readStream<LiveState>(`${BASE}/stream`, token, onData, signal);
   },
 
   reportCallEvent(evt: {

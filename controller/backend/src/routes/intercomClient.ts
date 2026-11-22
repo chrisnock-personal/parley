@@ -9,7 +9,8 @@ import { recordIntercomClientCallStart, recordIntercomClientCallEnd } from '../s
 import { getLiveStatus } from '../services/pbxCoreService';
 import { listLines } from '../services/transcriptService';
 import { latestIds, listMessages, postMessage } from '../services/chatService';
-import { talkersByDialCode } from '../services/groupService';
+import { buildClientPayload, getSnapshot, groupIdsOf, loadUserCtx, subscribeClient } from '../services/liveHub';
+import { openStream } from '../services/stream';
 
 const router = Router();
 
@@ -73,62 +74,21 @@ router.patch('/buttons/:id', requireIntercomClientAuth, async (req, res, next) =
 // by policy, and which of their calls/groups are being recorded right now.
 router.get('/groups/participants', requireIntercomClientAuth, async (req, res, next) => {
   try {
-    const buttons = await listButtons(req.intercomClientUser!.id);
-    const mine = new Set(buttons.filter((b) => b.button_type === 'group' && b.target_group_dial_code)
-      .map((b) => b.target_group_dial_code!));
+    const u = req.intercomClientUser!;
+    const ctx = await loadUserCtx(u.id, u.extension);
     let live;
-    try { live = await getLiveStatus(); }
+    try { live = await getSnapshot(); }
     catch { return res.status(502).json({ error: 'pbx-core unreachable' }); }
-    const talking = new Set<string>();
-    try {
-      const r = await fetch(`${config.transcriberUrl}/talking`, {
-        signal: AbortSignal.timeout(500),
-        headers: { Authorization: `Bearer ${config.internalToken}` },
-      });
-      const body = await r.json() as { talking: { group: string; extension: string }[] };
-      for (const t of body.talking) talking.add(`${t.group}/${t.extension}`);
-    } catch { /* transcriber down: nobody shows as talking */ }
-    const me = req.intercomClientUser!.extension;
-    const participants: Record<string, { extension: string; name: string; talking: boolean; muted: boolean }[]> = {};
-    const recordingGroups = new Set<string>();
-    let icmRecording = false;
-    for (const code of mine) participants[code] = [];
-    for (const c of live.calls) {
-      if (c.kind === 'group' && mine.has(c.to)) {
-        participants[c.to].push({ extension: c.from, name: c.fromName, talking: talking.has(`${c.to}/${c.from}`), muted: !!c.muted });
-        // Any member's recorded leg includes the group mix, so everyone's
-        // voice in that group is being recorded.
-        if (c.recording) recordingGroups.add(c.to);
-      }
-      if (c.kind === 'direct' && c.recording && (c.from === me || c.to === me)) icmRecording = true;
-    }
-    // Policy, not a live session: this user's calls get recorded (their
-    // "Record calls" switch is on AND a recording server is configured).
-    // Newest chat/transcript ids per group, for the client's "new" markers.
-    const groupIds = buttons.filter((b) => b.button_type === 'group' && b.target_group_id && b.target_group_dial_code);
-    const [self, settings, latestById] = await Promise.all([
-      getDirectoryUser(req.intercomClientUser!.id), getSettings(),
-      latestIds(groupIds.map((b) => b.target_group_id!))]);
-    const latest: Record<string, { chat: string | null; transcript: string | null }> = {};
-    for (const b of groupIds) latest[b.target_group_dial_code!] = latestById[b.target_group_id!];
-    // Listen-only groups: who talks, so a listener's client can join by
-    // itself while one of them is in the group (issue #11).
-    const talkers = await talkersByDialCode(buttons
-      .filter((b) => b.target_group_mode === 'announce' && b.target_group_dial_code)
-      .map((b) => b.target_group_dial_code!));
-    res.json({
-      participants,
-      latest,
-      talkers,
-      online: live.registrations.map((r) => r.extension),
-      avatars: await avatarVersions(),
-      recording: {
-        self: self.siprec_enabled && !!settings.siprec_srs_uri,
-        icm: icmRecording,
-        groups: [...recordingGroups],
-      },
-    });
+    const latestById = await latestIds(groupIdsOf(ctx).map((b) => b.target_group_id!));
+    res.json(buildClientPayload(ctx, live, latestById));
   } catch (err) { next(err); }
+});
+
+// The same view, pushed (issue #12): one update whenever it changes, from the
+// live hub. The client falls back to polling the route above if this drops.
+router.get('/stream', requireIntercomClientAuth, (req, res) => {
+  const u = req.intercomClientUser!;
+  openStream(req, res, (send) => subscribeClient(u.id, u.extension, send));
 });
 
 // The intercom directory for the client's "All" tab: every enabled user

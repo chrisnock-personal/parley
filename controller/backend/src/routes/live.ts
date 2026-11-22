@@ -7,8 +7,9 @@ import { requireAuth, requireRole } from '../middleware/session';
 import { audit } from '../services/auditService';
 import { listGroups } from '../services/groupService';
 import { listDirectoryUsers } from '../services/directoryUserService';
-import config from '../config';
 import * as pbxCore from '../services/pbxCoreService';
+import { getSnapshot, subscribeConsole } from '../services/liveHub';
+import { openStream } from '../services/stream';
 
 const router = Router();
 router.use(requireAuth);
@@ -17,19 +18,11 @@ router.use(requireAuth);
 // transcriber; best-effort, so a transcriber that's down means nobody shows
 // as talking rather than an error.
 router.get('/', async (_req, res, next) => {
-  try {
-    const status = await pbxCore.getLiveStatus();
-    let talking: { group: string; extension: string }[] = [];
-    try {
-      const r = await fetch(`${config.transcriberUrl}/talking`, {
-        signal: AbortSignal.timeout(500),
-        headers: { Authorization: `Bearer ${config.internalToken}` },
-      });
-      talking = ((await r.json()) as { talking: { group: string; extension: string }[] }).talking;
-    } catch { /* transcriber down */ }
-    res.json({ ...status, talking });
-  } catch (err) { next(err); }
+  try { res.json(await getSnapshot()); } catch (err) { next(err); }
 });
+
+// The same, pushed whenever it changes (issue #12).
+router.get('/stream', (req, res) => { openStream(req, res, (send) => subscribeConsole(send)); });
 
 // Remote mute (issue #9): { group: dial code, extension, muted }. Editors and
 // admins; audited against the group. The person still hears the group.

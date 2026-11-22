@@ -1272,25 +1272,39 @@ export default function App() {
 
   useEffect(() => managerRef.current.onChange(setSlotStates), []);
 
-  // Every second: quick enough for the who's-talking rings to feel live, and
-  // cheap for the backend (one pbx-core status fetch, one transcriber fetch,
-  // two small queries). A failed poll (pbx-core briefly down) keeps the last
-  // list rather than blanking it.
+  // Who's in each group, who's talking, online, recording, unread markers:
+  // pushed by the backend whenever it changes (issue #12). While the stream
+  // is down (not yet connected, a proxy drop, an older backend) the client
+  // polls the same view every second instead, and reconnects with a growing
+  // delay. A failed poll keeps the last view rather than blanking it.
   useEffect(() => {
     if (!session || needsSipPassword) return;
     let stopped = false;
-    const poll = () => api.groupParticipants()
-      .then((r) => {
-        if (stopped) return;
-        setParticipants(r.participants);
-        setLive({ online: r.online, recording: r.recording, avatars: r.avatars ?? {} });
-        setLatest(r.latest ?? {});
-        setTalkers(r.talkers ?? {});
-      })
-      .catch(() => { /* keep last known */ });
+    let streaming = false;
+    const apply = (r: LiveState) => {
+      if (stopped) return;
+      setParticipants(r.participants);
+      setLive({ online: r.online, recording: r.recording, avatars: r.avatars ?? {} });
+      setLatest(r.latest ?? {});
+      setTalkers(r.talkers ?? {});
+    };
+    const poll = () => { if (!streaming) api.groupParticipants().then(apply).catch(() => { /* keep last known */ }); };
     poll();
-    const t = window.setInterval(poll, 1000);
-    return () => { stopped = true; window.clearInterval(t); };
+    const pollTimer = window.setInterval(poll, 1000);
+    const abort = new AbortController();
+    (async () => {
+      let delay = 1000;
+      while (!stopped) {
+        try {
+          await api.liveStream((r) => { streaming = true; delay = 1000; apply(r); }, abort.signal);
+        } catch { /* fall back to polling below */ }
+        streaming = false;
+        if (stopped) return;
+        await new Promise((r) => setTimeout(r, delay));
+        delay = Math.min(delay * 2, 30_000);
+      }
+    })();
+    return () => { stopped = true; abort.abort(); window.clearInterval(pollTimer); };
   }, [sessionExt, needsSipPassword, pollTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reattach an existing intercom client session on a same-tab reload.

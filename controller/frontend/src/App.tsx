@@ -104,9 +104,29 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     void loadData(); void loadLive();
-    const live = window.setInterval(loadLive, 3000);
+    // Live status is pushed whenever it changes (issue #12); while that
+    // stream is down the page polls every 3 s and reconnects with a growing delay.
+    let stopped = false;
+    let streaming = false;
+    const live = window.setInterval(() => { if (!streaming) void loadLive(); }, 3000);
+    const abort = new AbortController();
+    (async () => {
+      let delay = 1000;
+      while (!stopped) {
+        try {
+          await api.liveStream((s) => {
+            streaming = true; delay = 1000;
+            setRegistrations(s.registrations); setCalls(s.calls); setTalking(s.talking ?? []); setLiveError(null);
+          }, abort.signal);
+        } catch { /* fall back to polling */ }
+        streaming = false;
+        if (stopped) return;
+        await new Promise((r) => setTimeout(r, delay));
+        delay = Math.min(delay * 2, 30_000);
+      }
+    })();
     const data = window.setInterval(loadData, 30000); // pick up changes made elsewhere
-    return () => { window.clearInterval(live); window.clearInterval(data); };
+    return () => { stopped = true; abort.abort(); window.clearInterval(live); window.clearInterval(data); };
   }, [user, loadData, loadLive]);
   const onError = useCallback((m: string) => setError(m), []);
 
