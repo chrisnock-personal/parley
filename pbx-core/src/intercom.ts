@@ -83,8 +83,8 @@ export function registerDirectIntercom(srf: Srf) {
       // A browser that vanished without BYE (crash, sleep, lost network):
       // hang up both legs ourselves, or it stays in as a ghost (liveness.ts).
       stopWatching = watchLegs([
-        ...(callerMode === 'webrtc' ? [{ dlg: uas, label: callerExt }] : []),
-        ...(calleeMode === 'webrtc' ? [{ dlg: uac, label: calleeExt }] : []),
+        ...(callerMode === 'webrtc' || config.livenessPlain ? [{ dlg: uas, label: callerExt }] : []),
+        ...(calleeMode === 'webrtc' || config.livenessPlain ? [{ dlg: uac, label: calleeExt }] : []),
       ], (who, why) => {
         console.log(`[liveness] ${callId}: ${who} has gone (${why}); ending the call`);
         hangUp(uas); hangUp(uac); teardown();

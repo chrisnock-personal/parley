@@ -46,6 +46,10 @@ export const config = {
   livenessMs: parseInt(process.env.LIVENESS_MS || '15000', 10),
   livenessTimeoutMs: parseInt(process.env.LIVENESS_TIMEOUT_MS || '8000', 10),
   livenessMisses: parseInt(process.env.LIVENESS_MISSES || '2', 10),
+  // Plain SIP phones too, not only browsers (issue #22): a desk phone that
+  // loses power or network left a ghost as well. LIVENESS_PLAIN=0 limits the
+  // check to browsers, for a phone that doesn't answer in-dialog OPTIONS.
+  livenessPlain: process.env.LIVENESS_PLAIN !== '0',
   // Dial-plan conventions for the prototype.
   //   direct intercom : dial a registered AOR/extension directly
   //   group intercom  : dial an id in the GROUP_PREFIX namespace (Phase 2)

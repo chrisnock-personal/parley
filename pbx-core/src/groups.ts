@@ -103,7 +103,7 @@ export function registerGroupIntercom(srf: Srf) {
       uac.on('destroy', () => { hangUp(uas); teardown(); });
       // A browser that vanished without BYE (crash, sleep, lost network):
       // hang up both legs ourselves, or it stays in as a ghost (liveness.ts).
-      stopWatching = watchLegs([...(callerMode === 'webrtc' ? [{ dlg: uas, label: memberExt }] : [])], (who, why) => {
+      stopWatching = watchLegs([...(callerMode === 'webrtc' || config.livenessPlain ? [{ dlg: uas, label: memberExt }] : [])], (who, why) => {
         console.log(`[liveness] ${callId}: ${who} has gone (${why}); ending the call`);
         hangUp(uas); hangUp(uac); teardown();
       });

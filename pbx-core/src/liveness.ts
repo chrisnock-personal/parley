@@ -1,4 +1,4 @@
-// Ends calls whose browser has gone (issue #15). A browser that crashes,
+// Ends calls whose browser or phone has gone (issues #15, #22). A browser that crashes,
 // sleeps or loses its network never sends BYE, and nothing else noticed: its
 // leg stayed in the group (a ghost participant) until someone kicked it from
 // the FreeSWITCH conference by hand.
