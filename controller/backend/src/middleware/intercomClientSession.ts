@@ -8,6 +8,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import config from '../config';
+import { clientUserEnabled } from '../services/sessionCheck';
 
 export interface IntercomClientSessionUser {
   id: string;
@@ -35,11 +36,14 @@ export async function requireIntercomClientAuth(req: Request, res: Response, nex
     if (!token) { res.status(401).json({ error: 'Unauthorised' }); return; }
     const payload = jwt.verify(token, config.jwtSecret) as IntercomClientSessionUser;
     if (payload.scope !== 'intercom-client') { res.status(401).json({ error: 'Invalid session' }); return; }
+    // Still allowed to log in (issue #25): a token outlives turning a login off.
+    if (!(await clientUserEnabled(payload.id))) { res.status(401).json({ error: 'This login has been turned off' }); return; }
     req.intercomClientUser = payload;
-    next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired session' });
+    return;
   }
+  next();
 }
 
 export function signIntercomClientToken(user: Omit<IntercomClientSessionUser, 'scope'>): string {

@@ -2,6 +2,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import config from '../config';
+import { consoleUserState } from '../services/sessionCheck';
 
 export interface SessionUser { id: string; email: string; role: string; }
 
@@ -31,11 +32,15 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // user has no console role/permissions at all. See intercomClientSession.ts's
     // matching check.
     if (payload.scope === 'intercom-client') { res.status(401).json({ error: 'Invalid session' }); return; }
-    req.user = payload;
-    next();
+    // Still active, and the role as it is now, not as it was at login (issue #25).
+    const state = await consoleUserState(payload.id);
+    if (!state.active || !state.role) { res.status(401).json({ error: 'This account is no longer active' }); return; }
+    req.user = { id: payload.id, email: payload.email, role: state.role };
   } catch {
     res.status(401).json({ error: 'Invalid or expired session' });
+    return;
   }
+  next();
 }
 
 export function requireRole(...roles: string[]) {

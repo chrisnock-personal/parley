@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../middleware/session';
 import { audit } from '../services/auditService';
 import * as directoryUsers from '../services/directoryUserService';
 import { invalidateUsers } from '../services/liveHub';
+import { forgetClientUser } from '../services/sessionCheck';
 
 const router = Router();
 router.use(requireAuth);
@@ -33,6 +34,7 @@ router.patch('/:id', requireRole('admin', 'editor'), async (req, res, next) => {
     }
     const u = await directoryUsers.updateDirectoryUser(req.user!.email, req.params.id, req.body ?? {});
     await audit(req.user!.email, 'directory_user', u.id, 'update', req.body);
+    forgetClientUser(u.id);
     invalidateUsers();
     res.json(u);
   } catch (err) { next(err); }
@@ -41,6 +43,7 @@ router.patch('/:id', requireRole('admin', 'editor'), async (req, res, next) => {
 router.delete('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     await directoryUsers.deleteDirectoryUser(req.params.id);
+    forgetClientUser(req.params.id);
     await audit(req.user!.email, 'directory_user', req.params.id, 'delete');
     res.json({ ok: true });
   } catch (err) { next(err); }
