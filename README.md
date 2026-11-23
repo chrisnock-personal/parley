@@ -51,7 +51,11 @@ people marked **Talks** can talk (push to talk); everyone else listens. A
 listener's client joins by itself, receive-only (no microphone, nothing
 sent), while a talker is in the group, and leaves when they've all gone. A
 listener who leaves during a page isn't brought back until the next one;
-one who joins by hand (**Listen now**) stays until they leave.
+one who joins by hand (**Listen now**) stays until they leave. If an
+automatic join fails or drops, the client tries again (2, 4, then 8 s
+later) while a talker is still there. The server enforces it too: pbx-core
+blocks a listener's audio in rtpengine, so a client that sends audio
+anyway still isn't heard.
 
 - **Who's in it and who's talking**, shown on every group card whether or
   not you've joined (from pbx-core's live call list, pushed to the client
@@ -160,8 +164,9 @@ are greyed out with the reason.
   (editors and admins, audited). pbx-core has rtpengine stop forwarding
   their audio, so nobody hears it and it isn't transcribed; they still hear
   the group, their client says the console has muted them, and Push To
-  Talk is off. A mute stays if they leave and rejoin, until someone unmutes
-  them (kept in pbx-core's memory, so a pbx-core restart clears it).
+  Talk is off. A mute stays if they leave and rejoin, and across a
+  pbx-core restart, until someone unmutes them (saved in
+  `intercom_group_mutes`; pbx-core loads them at start and every minute).
 - **People**: everyone with a client login. Name, extension, login on/off,
   Record calls (admin only), their groups and ICM keys, password reset.
 - **Groups**: talk mode, Transcribe and Chat, who has the group (give it to

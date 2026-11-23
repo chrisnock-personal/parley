@@ -4,7 +4,9 @@
 //  * a directory user's precomputed SIP digest credential (digestAuth.ts),
 //    plus, in the same row/query, whether they're SIP-REC recorded and
 //    their display name (siprec.ts's metadata);
-//  * the global SIP-REC recording server URI (system_settings).
+//  * the global SIP-REC recording server URI (system_settings);
+//  * remote mutes (intercom_group_mutes, issue #19) and whether a member is a
+//    listener in a listen-only group (issue #21).
 // No writes, and all short-TTL cached -everything else pbx-core does stays
 // exactly as in-memory/stateless as before.
 import { Pool } from 'pg';
@@ -54,6 +56,34 @@ export async function getUserPolicy(extension: string): Promise<UserPolicy> {
 /** sip_ha1 for a directory user by extension -see digestAuth.ts. */
 export async function getHa1(extension: string): Promise<string | null> {
   return (await getUserPolicy(extension)).ha1;
+}
+
+/** Every remote mute, by group dial code (issue #19). */
+export async function loadMutes(): Promise<{ group: string; extension: string; by: string; at: number }[]> {
+  const { rows } = await pool.query<{ dial_code: string; extension: string; muted_by: string; muted_at: Date }>(
+    `SELECT g.dial_code, m.extension, m.muted_by, m.muted_at
+       FROM intercom_group_mutes m JOIN intercom_groups g ON g.id = m.group_id`);
+  return rows.map((r) => ({ group: r.dial_code, extension: r.extension, by: r.muted_by, at: r.muted_at.getTime() }));
+}
+
+const listenerCache = new Map<string, { value: boolean; expiresAt: number }>();
+
+/** True when the group is listen-only (mode 'announce') and this extension
+ * isn't one of its talkers (issue #21): their media is blocked, so a client
+ * that offers audio anyway still isn't heard. */
+export async function isListener(groupCode: string, extension: string): Promise<boolean> {
+  const key = `${groupCode}/${extension.toLowerCase()}`;
+  const cached = listenerCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const { rows } = await pool.query<{ mode: string; can_talk: boolean | null }>(
+    `SELECT g.mode, b.can_talk
+       FROM intercom_groups g
+       LEFT JOIN intercom_directory_users u ON LOWER(u.extension) = $2
+       LEFT JOIN intercom_directory_user_buttons b ON b.target_group_id = g.id AND b.directory_user_id = u.id
+      WHERE g.dial_code = $1`, [groupCode, extension.toLowerCase()]);
+  const value = rows[0]?.mode === 'announce' && !rows.some((r) => r.can_talk);
+  listenerCache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+  return value;
 }
 
 let srsCache: { value: string | null; expiresAt: number } | null = null;

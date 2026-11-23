@@ -88,7 +88,10 @@ router.get('/groups/participants', requireIntercomClientAuth, async (req, res, n
 // live hub. The client falls back to polling the route above if this drops.
 router.get('/stream', requireIntercomClientAuth, (req, res) => {
   const u = req.intercomClientUser!;
-  openStream(req, res, (send) => subscribeClient(u.id, u.extension, send));
+  openStream(req, res, (send) => subscribeClient(u.id, u.extension, send), {
+    exp: (u as unknown as { exp?: number }).exp,
+    stillAllowed: async () => { try { return (await getDirectoryUser(u.id)).enabled; } catch { return false; } },
+  });
 });
 
 // The intercom directory for the client's "All" tab: every enabled user

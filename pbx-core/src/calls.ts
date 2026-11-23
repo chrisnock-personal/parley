@@ -22,6 +22,9 @@ export interface CallInfo {
   // ends early). Drives the client's REC indicators, so it reflects what is
   // actually being recorded, not just policy.
   recording?: boolean;
+  // Group calls: a listener in a listen-only group, whose media is blocked
+  // for the whole call (issue #21); unmuting doesn't open it.
+  listener?: boolean;
 }
 
 const calls = new Map<string, CallInfo>();

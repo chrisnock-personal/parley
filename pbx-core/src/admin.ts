@@ -40,7 +40,8 @@ export function startAdminServer(port: number): void {
           if (muted) mutes.set(group, extension, typeof by === 'string' ? by : 'console');
           else mutes.clear(group, extension);
           const legs = calls.all().filter((c) => c.kind === 'group' && c.to === group && c.from === extension);
-          for (const c of legs) await rtp.setBlocked(c.callId, c.callerTag, muted);
+          // A listener stays blocked when unmuted (issue #21).
+          for (const c of legs) if (muted || !c.listener) await rtp.setBlocked(c.callId, c.callerTag, muted);
           console.log(`[mute] ${extension} in ${group} ${muted ? `muted by ${by}` : 'unmuted'} (${legs.length} leg(s) now)`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, applied: legs.length }));

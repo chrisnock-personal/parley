@@ -6,12 +6,14 @@ import { upsert, all, aorKey, extOf } from './registrar';
 import { registerGroupIntercom } from './groups';
 import { registerDirectIntercom } from './intercom';
 import { startAdminServer } from './admin';
+import { startMuteSync } from './mutes';
 import { requireDigestAuth } from './digestAuth';
 
 const srf = new Srf();
 
 srf.connect(config.drachtio);
 startAdminServer(config.admin.port);
+startMuteSync();
 
 // Populates req.registration on REGISTER requests -drachtio-srf's own type
 // definitions declare that shape (SrfRequest.registration) but drachtio-srf

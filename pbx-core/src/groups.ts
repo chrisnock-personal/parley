@@ -29,6 +29,7 @@ import { sdpMode } from './sdpInspect';
 import { wireReinviteHandling } from './reinvite';
 import { watchLegs } from './liveness';
 import * as mutes from './mutes';
+import * as db from './db';
 import { extOf } from './registrar';
 import * as calls from './calls';
 import { startRecordingIfEnabled } from './siprec';
@@ -117,10 +118,19 @@ export function registerGroupIntercom(srf: Srf) {
         startedAt: Date.now(),
       });
       pokeTranscriber();
-      // Muted from the console before (or while away): still muted (issue #9).
-      if (mutes.get(groupCode, memberExt)) {
-        rtp.setBlocked(callId, fromTag, true).catch((e) => console.error(`[mute] reapplying for ${memberExt} in ${groupCode} failed:`, e?.message || e));
-      }
+      // Blocked from the start: a listener in a listen-only group (issue
+      // #21; their client offers no audio, this makes sure), or someone the
+      // console has muted in this group (issue #9).
+      void (async () => {
+        let listener = false;
+        try { listener = await db.isListener(groupCode, memberExt); }
+        catch (e: any) { console.error(`[listen-only] looking up ${memberExt} in ${groupCode} failed:`, e?.message || e); }
+        if (listener) { const c = calls.all().find((x) => x.callId === callId); if (c) c.listener = true; }
+        if (listener || mutes.get(groupCode, memberExt)) {
+          try { await rtp.setBlocked(callId, fromTag, true); }
+          catch (e: any) { console.error(`[mute] blocking ${memberExt} in ${groupCode} failed:`, e?.message || e); }
+        }
+      })();
 
       // Real hold/resume on a group leg (e.g. an intercom client member holding their
       // own line) -see reinvite.ts / intercom.ts's identical wiring.
