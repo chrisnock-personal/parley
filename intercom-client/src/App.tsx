@@ -792,6 +792,7 @@ const STACK_MAX = 4;
 // receive-only and is brought in by itself while a talker is in the group.
 const isListenOnly = (b: Button) => b.target_group_mode === 'announce';
 const isListener = (b: Button) => isListenOnly(b) && !b.can_talk;
+const AUTOJOIN_RETRIES = 3;
 function GroupStrip({ button, state, actions, lineUp, participants, selfExt, recording, hasNew, onSeen, ra, onPttHeld, onToggleJoin, onToggleFavourite, onCollapse, autoJoined = false, hotkey = null, keyTalking = false }: {
   hotkey?: string | null; // its keyboard shortcut (issue #6)
   keyTalking?: boolean; // being talked to by a held key
@@ -1230,6 +1231,9 @@ export default function App() {
   // they left during a page (not brought back until that page ends).
   const autoJoined = useRef<Set<string>>(new Set());
   const leftPage = useRef<Set<string>>(new Set());
+  // Auto-join attempts per listen-only group during the current page (issue #23).
+  const autoJoinTries = useRef<Map<string, { n: number; at: number }>>(new Map());
+  const [autoJoinTick, setAutoJoinTick] = useState(0);
   const setRaPrefs = (p: ReadAloudPrefs) => { setRaPrefsState(p); savePrefs(p); };
   const pttHeldSlots = useRef(new Set<string>());
   // Keyboard shortcuts (issue #6): this device's changes to the default keys,
@@ -1533,9 +1537,16 @@ export default function App() {
   // Listen-only groups (issue #11): a listener's client joins by itself
   // while one of the group's talkers is in it, and leaves when they've all
   // gone. One left during a page isn't rejoined until that page ends; one
-  // joined by hand is left alone.
+  // joined by hand is left alone. An auto-join that fails (or drops) is
+  // tried again up to AUTOJOIN_RETRIES times, 2 s, 4 s, then 8 s later,
+  // while a talker is still there (issue #23); a timer drives the retry,
+  // since the live view may not change in the meantime.
   useEffect(() => {
     if (!session || lineStatus !== 'registered' || !participants) return;
+    let retryTimer: number | null = null;
+    const scheduleRetry = (ms: number) => {
+      if (retryTimer === null || ms < 0) retryTimer = window.setTimeout(() => setAutoJoinTick((t) => t + 1), Math.max(ms, 0));
+    };
     for (const b of session.buttons) {
       if (b.button_type !== 'group' || !b.target_group_dial_code || !isListener(b)) continue;
       const code = b.target_group_dial_code;
@@ -1544,13 +1555,27 @@ export default function App() {
       const status = managerRef.current.getState(slot).status;
       if (!talking) {
         leftPage.current.delete(code);
+        autoJoinTries.current.delete(code);
         if (autoJoined.current.delete(code) && status !== 'idle') managerRef.current.hangup(slot);
-      } else if (status === 'idle' && !autoJoined.current.has(code) && !leftPage.current.has(code)) {
+        continue;
+      }
+      if (status !== 'idle' || leftPage.current.has(code)) continue;
+      const tries = autoJoinTries.current.get(code);
+      if (!autoJoined.current.has(code)) {
         autoJoined.current.add(code);
+        autoJoinTries.current.set(code, { n: 1, at: Date.now() });
         dialGroup(b);
+      } else if (tries && tries.n <= AUTOJOIN_RETRIES) {
+        // Auto-joined but idle again: the join failed or the call dropped.
+        const due = tries.at + 1000 * 2 ** tries.n;
+        if (Date.now() >= due) {
+          autoJoinTries.current.set(code, { n: tries.n + 1, at: Date.now() });
+          dialGroup(b);
+        } else scheduleRetry(due - Date.now());
       }
     }
-  }, [participants, talkers, lineStatus, session]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { if (retryTimer !== null) window.clearTimeout(retryTimer); };
+  }, [participants, talkers, lineStatus, session, autoJoinTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const answerIncoming = useCallback(() => {
     if (!incoming) return;
