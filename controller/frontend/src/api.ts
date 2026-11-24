@@ -357,6 +357,8 @@ export const api = {
   getDbStats() { return req<DbStats>('/admin/db/stats'); },
   runVacuum() { return req<{ ok: boolean; message: string }>('/admin/db/vacuum', { method: 'POST' }); },
   getSettings() { return req<Settings>('/settings'); },
+  archiveHostKey() { return req<{ host: string | null; port?: number; fingerprints: string[] }>('/settings/archive-host-key'); },
+  forgetArchiveHostKey() { return req<void>('/settings/archive-host-key', { method: 'DELETE' }); },
   searchConversations(f: ConversationFilters, offset = 0) {
     return req<{ total: number; lines: ConversationLine[] }>(`/conversations?${qs({ ...f, offset, limit: 100 })}`);
   },

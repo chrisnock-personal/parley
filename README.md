@@ -105,7 +105,9 @@ group's own setting: a set number of days, or **Don't keep** (lines still
 show live but are deleted after 15 minutes). Deletion is checked every 5
 minutes. With **Archive before deleting** on, lines are first written to a
 dated JSONL file per group per day, on the `parley-archives` volume or by
-SCP to another server, and nothing is deleted until the archive is written.
+SCP to another server, and nothing is deleted until the archive is written. An
+SCP server's host key is pinned the first time Parley connects and a
+different key is refused after that (Settings shows it, with Forget).
 
 **Shift summaries**: when a shift ends (start times and time zone under
 Settings), each group that had anything said or typed gets a short AI

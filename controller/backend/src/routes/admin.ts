@@ -7,7 +7,7 @@
 // driven with -h/-p/-U + a PGPASSWORD env var instead.
 import { Router, Request, Response, NextFunction } from 'express';
 import express from 'express';
-import { exec, execFile, spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import * as zlib from 'zlib';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -23,7 +23,6 @@ const router = Router();
 const adminOnly = requireRole('admin');
 router.use(requireAuth, adminOnly);
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 
@@ -33,15 +32,16 @@ function pgEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PGPASSWORD: config.pgPassword };
 }
 
-function pgConnArgs(): string {
-  return `-h ${config.pgHost} -p ${config.pgPort} -U ${config.pgUser} ${config.pgDatabase}`;
+// Arguments for execFile/spawn (no shell, #38).
+function pgConnArgs(): string[] {
+  return ['-h', config.pgHost, '-p', String(config.pgPort), '-U', config.pgUser, '-d', config.pgDatabase];
 }
 
 // ── Backup ──────────────────────────────────────────────────────────────────
 router.post('/backup', async (req: Request, res: Response, next: NextFunction) => {
   const tmpFile = path.join(os.tmpdir(), `parley-backup-${Date.now()}.sql`);
   try {
-    await execAsync(`pg_dump ${pgConnArgs()} -f ${tmpFile}`, { env: pgEnv(), timeout: 120_000 });
+    await execFileAsync('pg_dump', [...pgConnArgs(), '-f', tmpFile], { env: pgEnv(), timeout: 120_000 });
     const stat = fs.statSync(tmpFile);
     res.setHeader('Content-Type', 'application/sql');
     res.setHeader('Content-Disposition', `attachment; filename="parley-backup-${new Date().toISOString().slice(0,10)}.sql"`);
@@ -72,7 +72,7 @@ router.post('/restore', express.text({ type: '*/*', limit: '50mb' }),
         throw new Error('Invalid backup file -must be a PostgreSQL SQL dump');
       }
       fs.writeFileSync(tmpFile, req.body);
-      await execAsync(`psql ${pgConnArgs()} -f ${tmpFile}`, { env: pgEnv(), timeout: 300_000 });
+      await execFileAsync('psql', [...pgConnArgs(), '-f', tmpFile], { env: pgEnv(), timeout: 300_000 });
       await audit(req.user!.email, 'database', '00000000-0000-0000-0000-000000000000', 'update', { action: 'restore' });
       res.json({ ok: true, message: 'Restore completed' });
     } catch (e) {
@@ -166,25 +166,29 @@ router.post('/db/purge', async (req, res, next) => {
 // script in pg_dump's own COPY format: `psql -f` loads it back into the
 // database the rows were purged from (they refer to its groups and people;
 // rows still present there clash on their keys).
-// days = 0 archives everything. The WHERE clauses only ever interpolate the
-// validated integer `days`.
-const ARCHIVE_TABLES: { table: string; where: (days: number) => string }[] = [
-  { table: 'audit_log', where: (d) => `event_time < now() - interval '${d} days'` },
+// days = 0 archives everything. Each WHERE takes the cutoff as an SQL
+// expression: a bound parameter ($1) for the counts. COPY can't take
+// parameters, so there it's cutoffLiteral(), which only ever renders an
+// integer it has checked itself (#38).
+const ARCHIVE_TABLES: { table: string; where: (cutoff: string) => string }[] = [
+  { table: 'audit_log', where: (c) => `event_time < ${c}` },
   // Never a live session, as with purge.
-  { table: 'intercom_sessions', where: (d) => `state != 'active' AND started_at < now() - interval '${d} days'` },
-  { table: 'intercom_session_participants', where: (d) =>
-      `session_id IN (SELECT id FROM intercom_sessions WHERE state != 'active' AND started_at < now() - interval '${d} days')` },
-  { table: 'intercom_transcript_lines', where: (d) => `created_at < now() - interval '${d} days'` },
-  { table: 'intercom_chat_messages', where: (d) => `created_at < now() - interval '${d} days'` },
+  { table: 'intercom_sessions', where: (c) => `state != 'active' AND started_at < ${c}` },
+  { table: 'intercom_session_participants', where: (c) =>
+      `session_id IN (SELECT id FROM intercom_sessions WHERE state != 'active' AND started_at < ${c})` },
+  { table: 'intercom_transcript_lines', where: (c) => `created_at < ${c}` },
+  { table: 'intercom_chat_messages', where: (c) => `created_at < ${c}` },
 ];
+const CUTOFF_PARAM = 'now() - make_interval(days => $1::int)';
+function cutoffLiteral(days: number): string {
+  if (!Number.isSafeInteger(days) || days < 0) throw new Error('days must be a non-negative integer');
+  return `now() - make_interval(days => ${days})`;
+}
 
 // Streams one COPY ... TO STDOUT into `out`. spawn, no shell.
 function copyOut(sql: string, out: NodeJS.WritableStream): Promise<void> {
   return new Promise((resolve, reject) => {
-    const p = spawn('psql', [
-      '-h', config.pgHost, '-p', String(config.pgPort), '-U', config.pgUser, '-d', config.pgDatabase,
-      '-X', '-v', 'ON_ERROR_STOP=1', '-c', sql,
-    ], { env: pgEnv() });
+    const p = spawn('psql', [...pgConnArgs(), '-X', '-v', 'ON_ERROR_STOP=1', '-c', sql], { env: pgEnv() });
     let err = '';
     p.stderr.on('data', (d) => { err += d; });
     p.stdout.pipe(out, { end: false });
@@ -213,10 +217,10 @@ async function writeArchive(file: string, days: number): Promise<Record<string, 
         `SELECT column_name FROM information_schema.columns
           WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position`, [table]);
       const list = cols.rows.map((c) => `"${c.column_name}"`).join(', ');
-      const count = await query<{ n: string }>(`SELECT count(*)::text AS n FROM ${table} WHERE ${where(days)}`);
+      const count = await query<{ n: string }>(`SELECT count(*)::text AS n FROM ${table} WHERE ${where(CUTOFF_PARAM)}`, [days]);
       rows[table] = Number(count.rows[0].n);
       gz.write(`-- ${table}: ${rows[table]} rows\nCOPY public.${table} (${list}) FROM stdin;\n`);
-      await copyOut(`COPY (SELECT ${list} FROM ${table} WHERE ${where(days)}) TO STDOUT`, gz);
+      await copyOut(`COPY (SELECT ${list} FROM ${table} WHERE ${where(cutoffLiteral(days))}) TO STDOUT`, gz);
       gz.write('\\.\n\n');
     }
   } finally {

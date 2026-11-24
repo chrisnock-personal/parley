@@ -3,6 +3,7 @@
 // Updates the current-value snapshot on intercom_endpoints and appends a
 // time-series row to intercom_endpoint_health_log (pruned by retention).
 // Direct adaptation of Walk the Nxt Floor's sipHealthService.
+import { open as openSecret } from './secretBox';
 import { query } from '../db/pool';
 import config from '../config';
 
@@ -17,7 +18,8 @@ async function checkEndpoint(ep: Endpoint): Promise<void> {
     // Omitted entirely when unset -see migration 012's comment on why this
     // is a deliberately gradual rollout, not an assumed-required header.
     const headers: Record<string, string> = {};
-    if (ep.api_token) headers['Authorization'] = `Bearer ${ep.api_token}`;
+    const token = openSecret(ep.api_token);
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     const resp = await fetch(`${ep.rest_url}/api/status`, { signal: controller.signal, headers });
     const latencyMs = Date.now() - start;
     if (resp.ok) {

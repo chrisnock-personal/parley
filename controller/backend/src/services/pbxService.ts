@@ -9,6 +9,7 @@
 // PTT mute → endpoint  POST /api/hold  (a=sendonly, stops transmitting)
 // PTT talk → endpoint  POST /api/resume
 // Group    → Phase 2 (server-side mixer). Stubbed here.
+import { open as openSecret } from './secretBox';
 import { query, queryOne } from '../db/pool';
 import { createError } from '../middleware/errorHandler';
 import { audit } from './auditService';
@@ -82,7 +83,7 @@ export async function startDirect(actor: string, initiatorId: string, targetId: 
 
   try {
     // pbx-core injects the auto-answer header + anchors media when this dials.
-    await post(initiator.rest_url, '/api/call', { target: dialString(target.aor) }, initiator.api_token);
+    await post(initiator.rest_url, '/api/call', { target: dialString(target.aor) }, openSecret(initiator.api_token));
   } catch (err) {
     await query(`UPDATE intercom_sessions SET state='failed', ended_at=now(), end_reason=$2 WHERE id=$1`,
       [sessionId, (err as Error).message]);
@@ -100,7 +101,7 @@ export async function endSession(actor: string, sessionId: string, reason = 'ope
      FROM intercom_session_participants p
      JOIN intercom_endpoints e ON e.id = p.endpoint_id
      WHERE p.session_id = $1 AND p.left_at IS NULL`, [sessionId]);
-  await Promise.allSettled(parts.rows.map(p => p.rest_url ? post(p.rest_url, '/api/hangup', undefined, p.api_token) : Promise.resolve()));
+  await Promise.allSettled(parts.rows.map(p => p.rest_url ? post(p.rest_url, '/api/hangup', undefined, openSecret(p.api_token)) : Promise.resolve()));
   await query(`UPDATE intercom_session_participants SET left_at=now() WHERE session_id=$1 AND left_at IS NULL`, [sessionId]);
   await query(`UPDATE intercom_sessions SET state='ended', ended_at=now(), end_reason=$2 WHERE id=$1 AND state='active'`,
     [sessionId, reason]);
@@ -110,7 +111,7 @@ export async function endSession(actor: string, sessionId: string, reason = 'ope
 /** PTT floor: mute (hold/sendonly) or unmute (resume) one participant. */
 export async function setPtt(actor: string, sessionId: string, endpointId: string, muted: boolean): Promise<void> {
   const ep = await getEndpoint(endpointId);
-  if (ep.rest_url) await post(ep.rest_url, muted ? '/api/hold' : '/api/resume', undefined, ep.api_token);
+  if (ep.rest_url) await post(ep.rest_url, muted ? '/api/hold' : '/api/resume', undefined, openSecret(ep.api_token));
   await query(`UPDATE intercom_session_participants SET muted=$3 WHERE session_id=$1 AND endpoint_id=$2`,
     [sessionId, endpointId, muted]);
   await audit(actor, 'session', sessionId, muted ? 'ptt_release' : 'ptt_grant', { endpoint: ep.name });
@@ -147,7 +148,7 @@ export async function startGroup(actor: string, groupId: string): Promise<{ sess
 
   const dialString = `${GROUP_PREFIX}${group.dial_code}`;
   const results = await Promise.allSettled(
-    talkers.map(m => post(m.rest_url!, '/api/call', { target: dialString }, m.api_token))
+    talkers.map(m => post(m.rest_url!, '/api/call', { target: dialString }, openSecret(m.api_token)))
   );
   const failed = results.filter(r => r.status === 'rejected');
   if (failed.length === results.length) {

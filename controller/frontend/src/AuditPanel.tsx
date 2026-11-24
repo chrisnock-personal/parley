@@ -43,6 +43,7 @@ const FIELD_TEXT: Record<string, (v: unknown) => string> = {
   archive_enabled: (v) => `archive before deleting turned ${onOff(v)}`,
   archive_transfer: () => 'archive destination changed',
   summaries_enabled: (v) => `shift summaries turned ${onOff(v)}`,
+  forgot_host_key: (v) => `pinned host key for ${v} forgotten`,
   shift_starts: (v) => `shifts start at ${Array.isArray(v) ? v.join(', ') : v}`,
   shift_timezone: (v) => `shift time zone set to ${v}`,
 };

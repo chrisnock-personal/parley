@@ -1,4 +1,5 @@
 // src/routes/endpoints.ts
+import { seal } from '../services/secretBox';
 import { Router } from 'express';
 import crypto from 'crypto';
 import { query, queryOne } from '../db/pool';
@@ -55,7 +56,7 @@ router.post('/:id/regenerate-token', requireRole('admin'), async (req, res, next
   try {
     const token = crypto.randomBytes(24).toString('hex');
     const result = await query(
-      `UPDATE intercom_endpoints SET api_token = $1 WHERE id = $2`, [token, req.params.id]);
+      `UPDATE intercom_endpoints SET api_token = $1 WHERE id = $2`, [seal(token), req.params.id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Endpoint not found' });
     await audit(req.user!.email, 'endpoint', req.params.id, 'update', { action: 'regenerate-token' });
     res.json({ token });

@@ -104,6 +104,7 @@ export default function SettingsPanel({ onError }: { onError: (msg: string) => v
               <div className="field"><label>User</label><input value={transfer.user ?? ''} onChange={e => setT({ user: e.target.value })} /></div>
               <div className="field"><label>Port</label><input type="number" value={transfer.port ?? 22} onChange={e => setT({ port: parseInt(e.target.value) || 22 })} /></div>
               <div className="field"><label>SSH key (path in the controller container)</label><input value={transfer.key_path ?? ''} onChange={e => setT({ key_path: e.target.value })} /></div>
+              <HostKey onError={onError} />
             </>
           )}
         </>
@@ -133,6 +134,26 @@ export default function SettingsPanel({ onError }: { onError: (msg: string) => v
         <button className="primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save settings'}</button>
         {message && <span style={{ fontSize: 12, color: 'var(--green)' }}>{message}</span>}
       </div>
+    </div>
+  );
+}
+
+// The SCP server's pinned host key (#30), for the saved settings.
+function HostKey({ onError }: { onError: (msg: string) => void }) {
+  const [info, setInfo] = useState<{ host: string | null; fingerprints: string[] } | null>(null);
+  const load = useCallback(() => { api.archiveHostKey().then(setInfo).catch((e) => onError((e as Error).message)); }, [onError]);
+  useEffect(() => { load(); }, [load]);
+  if (!info?.host) return null;
+  const forget = async () => {
+    if (!window.confirm(`Forget ${info.host}'s host key? The next archive will trust and pin whatever key the server shows then.`)) return;
+    try { await api.forgetArchiveHostKey(); load(); } catch (e) { onError((e as Error).message); }
+  };
+  return (
+    <div style={help}>
+      <strong>{info.host}'s host key:</strong>{' '}
+      {info.fingerprints.length
+        ? <><code>{info.fingerprints.join(', ')}</code> pinned; a different key is refused.{' '}<button type="button" onClick={() => void forget()}>Forget it</button></>
+        : 'not pinned yet. It\'s pinned the first time Parley sends an archive there.'}
     </div>
   );
 }

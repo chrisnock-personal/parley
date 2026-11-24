@@ -8,6 +8,7 @@ import config from './config';
 import { pool } from './db/pool';
 import { runMigrations } from './db/migrate';
 import { seedDefaultAdmin } from './services/userService';
+import { sealLegacySecrets } from './services/secretBox';
 import { seedDemoData } from './services/demoSeedService';
 import { startHealthScheduler } from './services/endpointHealthService';
 import { errorHandler } from './middleware/errorHandler';
@@ -36,6 +37,7 @@ async function main() {
 
   await runMigrations();
   await seedDefaultAdmin();
+  await sealLegacySecrets();
   await seedDemoData();
 
   const app = express();
