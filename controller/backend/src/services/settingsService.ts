@@ -19,12 +19,13 @@ export interface Settings {
   summaries_enabled: boolean;         // AI summary per group per shift (#29)
   shift_starts: string[];             // "HH:MM", sorted
   shift_timezone: string;             // IANA zone the shift times are in
+  shift_names: Record<string, string>; // optional name per start time, e.g. {"06:00": "Day"}
 }
 
 const DEFAULTS: Settings = {
   siprec_srs_uri: null, transcript_retention_days: 30,
   archive_enabled: false, archive_transfer: { type: 'local', path: 'transcripts' },
-  summaries_enabled: false, shift_starts: ['06:00', '14:00', '22:00'], shift_timezone: 'UTC',
+  summaries_enabled: false, shift_starts: ['06:00', '14:00', '22:00'], shift_timezone: 'UTC', shift_names: {},
 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -35,6 +36,13 @@ function parseTransfer(raw: string | null | undefined): ArchiveTransfer {
     if (t && (t.type === 'local' || t.type === 'scp') && typeof t.path === 'string') return t;
   } catch { /* default */ }
   return DEFAULTS.archive_transfer;
+}
+
+function parseNames(raw: string | null | undefined): Record<string, string> {
+  try {
+    const o = JSON.parse(raw ?? '{}') as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(o).filter(([k, v]) => HHMM.test(k) && typeof v === 'string' && v.trim()) as [string, string][]);
+  } catch { return {}; }
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -50,6 +58,7 @@ export async function getSettings(): Promise<Settings> {
     summaries_enabled: raw.get('summaries_enabled') === 'true',
     shift_starts: starts.length ? [...new Set(starts)].sort() : DEFAULTS.shift_starts,
     shift_timezone: raw.get('shift_timezone')?.trim() || DEFAULTS.shift_timezone,
+    shift_names: parseNames(raw.get('shift_names')),
   };
 }
 
@@ -103,6 +112,19 @@ export async function updateSettings(actor: string, fields: Partial<Settings>): 
     const tz = String(fields.shift_timezone).trim();
     try { new Intl.DateTimeFormat('en', { timeZone: tz }); } catch { throw createError(`Unknown time zone: ${tz}`, 400); }
     writes.push(['shift_timezone', tz]);
+  }
+
+  if (fields.shift_names !== undefined) {
+    const n = fields.shift_names;
+    if (!n || typeof n !== 'object' || Array.isArray(n)) throw createError('shift_names must be an object of time to name', 400);
+    const clean: Record<string, string> = {};
+    for (const [k, v] of Object.entries(n)) {
+      if (!HHMM.test(k) || typeof v !== 'string') throw createError('shift_names must map times like 06:00 to names', 400);
+      const name = v.trim();
+      if (name.length > 30) throw createError('A shift name can be at most 30 characters', 400);
+      if (name) clean[k] = name;
+    }
+    writes.push(['shift_names', JSON.stringify(clean)]);
   }
 
   for (const [key, value] of writes) {

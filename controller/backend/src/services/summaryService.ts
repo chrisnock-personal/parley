@@ -60,10 +60,13 @@ export function previousShift(now: number, starts: string[], tz: string): Shift 
   return { start: new Date(b[i - 2]), end: new Date(b[i - 1]) };
 }
 
-/** "06:00–14:00", in the shift time zone. */
-export function shiftLabel(shift: Shift, tz: string): string {
+/** "Day (06:00–14:00)", or "06:00–14:00" for a shift without a name, in
+ * the shift time zone. */
+export function shiftLabel(shift: Shift, tz: string, names: Record<string, string> = {}): string {
   const f = (d: Date) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
-  return `${f(shift.start)}–${f(shift.end)}`;
+  const times = `${f(shift.start)}–${f(shift.end)}`;
+  const name = names[f(shift.start)];
+  return name ? `${name} (${times})` : times;
 }
 
 // ── Summarising ────────────────────────────────────────────────────────────
@@ -168,7 +171,16 @@ export async function summariseNow(code?: string): Promise<{ groups: number; shi
     void serial(() => summariseGroup(g, shift, true, s.shift_timezone))
       .catch((e) => console.error(`[summaries] ${g.name}: ${(e as Error).message}`));
   }
-  return { groups: groups.length, shift: shiftLabel(cur, s.shift_timezone) };
+  return { groups: groups.length, shift: shiftLabel(cur, s.shift_timezone, s.shift_names) };
+}
+
+/** The label for a stored summary: a "so far" one is stored ending when it
+ * was made, but is labelled with its shift's real end. */
+export function summaryLabel(x: { shift_start: string | Date; shift_end: string | Date; partial: boolean },
+  s: { shift_starts: string[]; shift_timezone: string; shift_names: Record<string, string> }): string {
+  const start = new Date(x.shift_start);
+  const end = x.partial ? currentShift(start.getTime(), s.shift_starts, s.shift_timezone).end : new Date(x.shift_end);
+  return shiftLabel({ start, end }, s.shift_timezone, s.shift_names);
 }
 
 export interface ShiftSummary {

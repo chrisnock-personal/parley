@@ -11,7 +11,7 @@ import { listLines } from '../services/transcriptService';
 import { latestIds, listMessages, postMessage } from '../services/chatService';
 import { buildClientPayload, getSnapshot, groupIdsOf, loadUserCtx, subscribeClient } from '../services/liveHub';
 import { openStream } from '../services/stream';
-import { listSummaries, shiftLabel } from '../services/summaryService';
+import { listSummaries, summaryLabel } from '../services/summaryService';
 
 const router = Router();
 
@@ -199,7 +199,7 @@ router.get('/groups/:code/summaries', requireIntercomClientAuth, async (req, res
     const s = await getSettings();
     const list = await listSummaries({ code: req.params.code, limit: 5 });
     res.json(list.map((x) => ({ id: x.id, shift_start: x.shift_start, shift_end: x.shift_end, summary: x.summary, partial: x.partial,
-      label: shiftLabel({ start: new Date(x.shift_start), end: new Date(x.shift_end) }, s.shift_timezone) })));
+      label: summaryLabel(x, s) })));
   } catch (err) { next(err); }
 });
 

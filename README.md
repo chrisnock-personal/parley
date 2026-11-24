@@ -109,8 +109,8 @@ SCP to another server, and nothing is deleted until the archive is written. An
 SCP server's host key is pinned the first time Parley connects and a
 different key is refused after that (Settings shows it, with Forget).
 
-**Shift summaries**: when a shift ends (start times and time zone under
-Settings), each group that had anything said or typed gets a short AI
+**Shift summaries**: when a shift ends (start times, optional names such
+as "Day", and the time zone under Settings), each group that had anything said or typed gets a short AI
 summary from the server's own Ollama (`OLLAMA_URL`, `OLLAMA_MODEL`;
 nothing leaves the server). The newest sits at the top of the group's
 conversation with the earlier ones a click away, and summaries are kept for

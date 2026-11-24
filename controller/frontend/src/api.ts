@@ -86,6 +86,7 @@ export interface Settings {
   summaries_enabled: boolean;        // #29
   shift_starts: string[];
   shift_timezone: string;
+  shift_names: Record<string, string>;
 }
 
 export interface ConversationLine {
@@ -272,6 +273,7 @@ export const api = {
   createGroup(body: { name: string; description?: string; mode?: 'talkback' | 'announce'; ptt_default?: boolean; dial_code?: string }) {
     return req<Group>('/groups', { method: 'POST', body: JSON.stringify(body) });
   },
+  retentionDefault() { return req<{ days: number }>('/groups/retention-default'); },
   updateGroup(id: string, body: Partial<{ name: string; description: string; mode: 'talkback' | 'announce'; ptt_default: boolean; dial_code: string; transcribe_enabled: boolean; chat_enabled: boolean; keep_days: number | null }>) {
     return req<Group>(`/groups/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
   },

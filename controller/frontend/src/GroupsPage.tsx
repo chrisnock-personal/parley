@@ -86,12 +86,15 @@ function TalkModePicker({ value, onChange, disabled }: { value: TalkMode; onChan
 function KeepPicker({ keepDays, disabled, onChange }: { keepDays: number | null; disabled: boolean; onChange: (k: number | null) => void }) {
   const mode = keepDays === null ? 'settings' : keepDays === 0 ? 'none' : 'days';
   const [days, setDays] = useState(keepDays && keepDays > 0 ? keepDays : 30);
+  const [defaultDays, setDefaultDays] = useState<number | null>(null);
+  useEffect(() => { api.retentionDefault().then((r) => setDefaultDays(r.days)).catch(() => { /* label without the number */ }); }, []);
   useEffect(() => { if (keepDays && keepDays > 0) setDays(keepDays); }, [keepDays]);
   const saveDays = () => { if (mode === 'days' && days !== keepDays && days >= 1 && days <= 3650) onChange(days); };
   return (
-    <div className="c-field">Keep transcripts and chat
+    <>
+      <div className="c-sec"><span>Keep transcripts and chat</span></div>
       <div className="c-seg" role="group" aria-label="Keep transcripts and chat">
-        {([['settings', 'As Settings'], ['days', 'For a set time'], ['none', "Don't keep"]] as const).map(([m, label]) => (
+        {([['settings', defaultDays ? `As Settings (${defaultDays} days)` : 'As Settings'], ['days', 'For a set time'], ['none', "Don't keep"]] as const).map(([m, label]) => (
           <button key={m} type="button" className={mode === m ? 'on' : ''} aria-pressed={mode === m} disabled={disabled}
             onClick={() => onChange(m === 'settings' ? null : m === 'none' ? 0 : days)}>{label}</button>
         ))}
@@ -103,8 +106,8 @@ function KeepPicker({ keepDays, disabled, onChange }: { keepDays: number | null;
             onKeyDown={(e) => { if (e.key === 'Enter') saveDays(); }} /> days for this group
         </span>
       )}
-      {mode === 'none' && <p className="c-help">Lines still show live, but are deleted after 15 minutes: nothing to search, archive or summarise later.</p>}
-    </div>
+      {mode === 'none' && <p className="c-help">Lines still show live to people in the group, then are deleted after 15 minutes: nothing to read back, search, archive or summarise later.</p>}
+    </>
   );
 }
 

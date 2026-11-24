@@ -7,7 +7,7 @@ import { requireAuth, requireRole } from '../middleware/session';
 import { query } from '../db/pool';
 import { audit } from '../services/auditService';
 import { getSettings } from '../services/settingsService';
-import { listSummaries, shiftLabel, summariseNow } from '../services/summaryService';
+import { listSummaries, summariseNow, summaryLabel } from '../services/summaryService';
 
 const router = Router();
 router.use(requireAuth, requireRole('admin', 'editor'));
@@ -83,7 +83,7 @@ router.get('/summaries', async (req, res, next) => {
     });
     res.json({
       enabled: s.summaries_enabled,
-      summaries: list.map((x) => ({ ...x, label: shiftLabel({ start: new Date(x.shift_start), end: new Date(x.shift_end) }, s.shift_timezone) })),
+      summaries: list.map((x) => ({ ...x, label: summaryLabel(x, s) })),
     });
   } catch (err) { next(err); }
 });

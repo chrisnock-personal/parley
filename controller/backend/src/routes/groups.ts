@@ -4,12 +4,19 @@ import { requireAuth, requireRole } from '../middleware/session';
 import { audit } from '../services/auditService';
 import * as groups from '../services/groupService';
 import { invalidateUsers } from '../services/liveHub';
+import { getSettings } from '../services/settingsService';
 
 const router = Router();
 router.use(requireAuth);
 
 router.get('/', async (_req, res, next) => {
   try { res.json(await groups.listGroupsSummary()); } catch (err) { next(err); }
+});
+
+// How long a group set to "As Settings" keeps its transcripts and chat
+// (#26), for the group page; Settings itself is admin-only.
+router.get('/retention-default', async (_req, res, next) => {
+  try { res.json({ days: (await getSettings()).transcript_retention_days }); } catch (err) { next(err); }
 });
 
 // Who has this group on their intercom client. Adding or removing someone

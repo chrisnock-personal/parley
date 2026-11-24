@@ -742,14 +742,14 @@ function ShiftSummaries({ code }: { code: string }) {
     <div key={s.id} className={`shift-summary${latest ? ' latest' : ''}`}>
       <div className="shift-summary-label">{latest ? (s.partial ? 'THIS SHIFT' : 'LAST SHIFT') : day(s.shift_start)} · {s.label}{s.partial ? ' · so far' : ''} · AI summary</div>
       <div>{s.summary}</div>
+      {latest && list.length > 1 && (
+        <button className="link-btn" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide earlier shifts' : `Earlier shifts (${list.length - 1})`}</button>
+      )}
     </div>
   );
   return (
     <div className="shift-summaries">
       {one(list[0], true)}
-      {list.length > 1 && (
-        <button className="link-btn" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide earlier shifts' : `Earlier shifts (${list.length - 1})`}</button>
-      )}
       {showAll && list.slice(1).map((s) => one(s, false))}
     </div>
   );
