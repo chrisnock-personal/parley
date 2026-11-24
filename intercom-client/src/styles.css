@@ -593,3 +593,10 @@ input[type=checkbox] { accent-color: var(--accent); }
 .kb-what { color: var(--text); min-width: 0; }
 .kb-key { flex: none; font-family: var(--mono); font-size: 12px; min-width: 52px; padding: 3px 8px; border-radius: 6px; }
 .kb-key.waiting { border: 1px dashed var(--accent); color: var(--accent); }
+
+/* Shift summaries (#29) */
+.shift-summaries { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.shift-summary { background: var(--surface-3); border: 1px solid var(--line-2); border-radius: var(--r-btn); padding: 10px 12px; font-size: 13px; line-height: 1.5; }
+.shift-summary.latest { border-color: var(--accent); }
+.shift-summary-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--accent); margin-bottom: 4px; }
+.shift-summaries .link-btn { align-self: flex-start; color: var(--accent); }

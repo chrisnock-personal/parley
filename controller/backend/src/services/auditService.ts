@@ -4,7 +4,7 @@ import { query } from '../db/pool';
 export type AuditAction =
   | 'create' | 'update' | 'delete' | 'login' | 'logout'
   | 'call_start' | 'call_end' | 'page' | 'ptt_grant' | 'ptt_release'
-  | 'group_join' | 'group_leave';
+  | 'group_join' | 'group_leave' | 'export';
 
 export async function audit(
   actor: string, entity_type: string, entity_id: string,

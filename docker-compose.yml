@@ -102,6 +102,12 @@ services:
       # one-time host prerequisite: `systemctl --user enable --now
       # podman.socket` (rootless podman) -see CLAUDE.md.
       PODMAN_SOCKET_PATH: /run/podman/podman.sock
+      # Archives (the Backups archive and transcripts/chat before deletion,
+      # #28) are written under this folder, on the parley-archives volume.
+      LOCAL_ARCHIVE_DIR: /var/lib/parley/archive
+      # Shift summaries (#29): the shared Ollama on the host.
+      OLLAMA_URL:       ${OLLAMA_URL:-http://host.containers.internal:11434}
+      OLLAMA_MODEL:     ${OLLAMA_MODEL:-qwen2.5:7b}
     volumes:
       # Hardcoded to uid 1000 (confirmed via `id -u` on this lab host) —
       # adjust if the deployment user ever differs. `:Z` relabels the socket
@@ -110,6 +116,8 @@ services:
       # (even a plain `ls` on the mounted path failed with Permission
       # denied) regardless of the uid/keep-id fix above.
       - /run/user/1000/podman/podman.sock:/run/podman/podman.sock:Z
+      # :U so the container's user (uid 1000, keep-id) owns it.
+      - parley-archives:/var/lib/parley/archive:U
     # Loopback only (security review 2026-11-09, C2): browsers reach the API
     # through nginx's /api/v1, and this container holds the podman socket.
     ports:
@@ -275,3 +283,4 @@ services:
 volumes:
   parley-pgdata:
   parley-tls-certs:
+  parley-archives:

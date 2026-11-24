@@ -42,6 +42,7 @@ export interface Group {
   dial_code: string;
   transcribe_enabled: boolean;
   chat_enabled: boolean;
+  keep_days?: number | null; // transcripts/chat: null = Settings, 0 = don't keep, else days (#26)
   holder_count?: number; // people with a button for it (list only)
 }
 
@@ -75,10 +76,32 @@ export interface DirectoryUser {
   key_count?: number;
 }
 
+export interface ArchiveTransfer { type: 'local' | 'scp'; path: string; host?: string; user?: string; port?: number; key_path?: string }
+
 export interface Settings {
   siprec_srs_uri: string | null;
   transcript_retention_days: number;
+  archive_enabled: boolean;          // #28
+  archive_transfer: ArchiveTransfer;
+  summaries_enabled: boolean;        // #29
+  shift_starts: string[];
+  shift_timezone: string;
 }
+
+export interface ConversationLine {
+  kind: 'said' | 'typed'; id: string; at: string; group: string; group_name: string;
+  extension: string; name: string | null; text: string;
+}
+export interface ShiftSummary {
+  id: string; group_name: string; dial_code: string; shift_start: string; shift_end: string; label: string;
+  summary: string; line_count: number; partial: boolean; created_at: string;
+}
+export interface ConversationFilters { group?: string; person?: string; from?: string; to?: string; q?: string; kind?: string }
+const qs = (f: object) => {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== null && v !== '') p.set(k, String(v));
+  return p.toString();
+};
 
 export interface SystemHealth {
   timestamp: string;
@@ -249,7 +272,7 @@ export const api = {
   createGroup(body: { name: string; description?: string; mode?: 'talkback' | 'announce'; ptt_default?: boolean; dial_code?: string }) {
     return req<Group>('/groups', { method: 'POST', body: JSON.stringify(body) });
   },
-  updateGroup(id: string, body: Partial<{ name: string; description: string; mode: 'talkback' | 'announce'; ptt_default: boolean; dial_code: string; transcribe_enabled: boolean; chat_enabled: boolean }>) {
+  updateGroup(id: string, body: Partial<{ name: string; description: string; mode: 'talkback' | 'announce'; ptt_default: boolean; dial_code: string; transcribe_enabled: boolean; chat_enabled: boolean; keep_days: number | null }>) {
     return req<Group>(`/groups/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
   },
   deleteGroup(id: string) {
@@ -334,6 +357,25 @@ export const api = {
   getDbStats() { return req<DbStats>('/admin/db/stats'); },
   runVacuum() { return req<{ ok: boolean; message: string }>('/admin/db/vacuum', { method: 'POST' }); },
   getSettings() { return req<Settings>('/settings'); },
+  searchConversations(f: ConversationFilters, offset = 0) {
+    return req<{ total: number; lines: ConversationLine[] }>(`/conversations?${qs({ ...f, offset, limit: 100 })}`);
+  },
+  /** Downloads the matching lines as a file (#27). */
+  async exportConversations(f: ConversationFilters, format: 'csv' | 'text') {
+    const resp = await fetch(`${BASE}/conversations/export?${qs({ ...f, format })}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!resp.ok) throw new Error(`Export failed: HTTP ${resp.status}`);
+    const name = /filename="([^"]+)"/.exec(resp.headers.get('Content-Disposition') ?? '')?.[1] ?? `parley-conversations.${format === 'csv' ? 'csv' : 'txt'}`;
+    const url = URL.createObjectURL(await resp.blob());
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  },
+  listSummaries(f: { group?: string; from?: string; to?: string }) {
+    return req<{ enabled: boolean; summaries: ShiftSummary[] }>(`/conversations/summaries?${qs(f)}`);
+  },
+  summariseNow(group?: string) {
+    return req<{ groups: number; shift: string }>('/conversations/summarise', { method: 'POST', body: JSON.stringify({ group }) });
+  },
   updateSettings(body: Partial<Settings>) {
     return req<Settings>('/settings', { method: 'PATCH', body: JSON.stringify(body) });
   },

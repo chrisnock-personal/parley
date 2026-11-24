@@ -80,6 +80,34 @@ function TalkModePicker({ value, onChange, disabled }: { value: TalkMode; onChan
   );
 }
 
+// How long this group's transcripts and chat are kept (#26): as Settings,
+// a set number of days, or not kept (deleted after 15 minutes, never
+// archived or summarised).
+function KeepPicker({ keepDays, disabled, onChange }: { keepDays: number | null; disabled: boolean; onChange: (k: number | null) => void }) {
+  const mode = keepDays === null ? 'settings' : keepDays === 0 ? 'none' : 'days';
+  const [days, setDays] = useState(keepDays && keepDays > 0 ? keepDays : 30);
+  useEffect(() => { if (keepDays && keepDays > 0) setDays(keepDays); }, [keepDays]);
+  const saveDays = () => { if (mode === 'days' && days !== keepDays && days >= 1 && days <= 3650) onChange(days); };
+  return (
+    <div className="c-field">Keep transcripts and chat
+      <div className="c-seg" role="group" aria-label="Keep transcripts and chat">
+        {([['settings', 'As Settings'], ['days', 'For a set time'], ['none', "Don't keep"]] as const).map(([m, label]) => (
+          <button key={m} type="button" className={mode === m ? 'on' : ''} aria-pressed={mode === m} disabled={disabled}
+            onClick={() => onChange(m === 'settings' ? null : m === 'none' ? 0 : days)}>{label}</button>
+        ))}
+      </div>
+      {mode === 'days' && (
+        <span className="c-keep-days">
+          <input type="number" min={1} max={3650} value={days} disabled={disabled}
+            onChange={(e) => setDays(parseInt(e.target.value) || 1)} onBlur={saveDays}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveDays(); }} /> days for this group
+        </span>
+      )}
+      {mode === 'none' && <p className="c-help">Lines still show live, but are deleted after 15 minutes: nothing to search, archive or summarise later.</p>}
+    </div>
+  );
+}
+
 function NewGroup({ onCreated, onCancel, onError }: { onCreated: (id: string) => void; onCancel: () => void; onError: (m: string) => void }) {
   const [name, setName] = useState('');
   const [dialCode, setDialCode] = useState('');
@@ -167,6 +195,10 @@ function GroupDetail({ group, users, inNow, talking, canEdit, isAdmin, onChanged
         <Switch label="Chat" help="Members can type to the group, shown with the transcript" checked={group.chat_enabled}
           disabled={!canEdit || busy} disabledReason="Editors and admins only" onChange={(v) => update({ chat_enabled: v })} />
       </div>
+
+      {(group.transcribe_enabled || group.chat_enabled) && (
+        <KeepPicker keepDays={group.keep_days ?? null} disabled={!canEdit || busy} onChange={(k) => update({ keep_days: k })} />
+      )}
 
       <div className="c-sec"><span>Who has this group</span><span className="c-sec-note">{holders.length} {holders.length === 1 ? 'person' : 'people'}
         {listenOnly && ` · ${holders.filter((h) => h.can_talk).length} talk`}</span></div>

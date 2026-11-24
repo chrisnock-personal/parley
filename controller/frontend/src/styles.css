@@ -439,3 +439,22 @@ button.c-btn { width: auto; margin: 0; white-space: nowrap; }
 button.c-btn.wide { width: 100%; }
 .c-actions-foot .c-btn.primary { min-width: 140px; }
 .group-cols { grid-template-columns: minmax(0, 1.4fr) 120px minmax(0, 1.4fr) 64px 64px; }
+
+/* Per-group retention (#26) */
+.c-keep-days { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+.c-keep-days input { width: 80px; }
+
+/* Conversations (#27, #29) */
+.c-conv-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 14px 16px; margin-bottom: 16px; }
+.c-conv-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+@media (max-width: 1000px) { .c-conv-grid { grid-template-columns: 1fr; } }
+.c-conv-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; }
+.c-conv-line { display: flex; gap: 12px; padding: 10px 16px; border-top: 1px solid #22272e; font-size: 13px; line-height: 1.45; }
+.c-conv-meta { font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
+.c-conv-line mark { background: var(--cyan-dim); color: var(--text); border-radius: 3px; padding: 0 2px; }
+.c-conv-more { margin: 10px 16px 14px; }
+.c-conv-note { margin: 0; padding: 0 16px 10px; }
+.c-conv-summary { padding: 14px 16px; border-top: 1px solid #22272e; font-size: 13px; line-height: 1.5; display: flex; flex-direction: column; gap: 4px; }
+.c-conv-sum-head { font-weight: 600; }
+.c-conv-filters .c-grow { flex: 1; min-width: 180px; }
+.c-conv-filters .c-grow input { width: 100%; box-sizing: border-box; }

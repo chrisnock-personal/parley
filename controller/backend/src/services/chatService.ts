@@ -2,7 +2,6 @@
 // post, and prune to the same retention as transcripts.
 import { query, queryOne } from '../db/pool';
 import { createError } from '../middleware/errorHandler';
-import { getSettings } from './settingsService';
 
 export interface ChatMessage {
   id: string;               // BIGSERIAL, as a string (pg returns int8 as text)
@@ -63,18 +62,3 @@ export async function latestIds(groupIds: string[]): Promise<Record<string, { ch
   return out;
 }
 
-async function pruneChat(): Promise<void> {
-  try {
-    const { transcript_retention_days: days } = await getSettings();
-    const result = await query(
-      `DELETE FROM intercom_chat_messages WHERE created_at < now() - ($1 || ' days')::interval`, [days]);
-    if (result.rowCount) console.log(`[chat] Pruned ${result.rowCount} message(s) > ${days}d`);
-  } catch (err) {
-    console.error('[chat] Failed to prune:', (err as Error).message);
-  }
-}
-
-export function startChatRetention(): void {
-  void pruneChat();
-  setInterval(() => void pruneChat(), 60 * 60 * 1000);
-}

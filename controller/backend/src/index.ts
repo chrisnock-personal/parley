@@ -19,11 +19,12 @@ import intercomRoutes from './routes/intercom';
 import directoryUserRoutes from './routes/directoryUsers';
 import intercomClientRoutes from './routes/intercomClient';
 import liveRoutes from './routes/live';
+import conversationRoutes from './routes/conversations';
 import systemRoutes from './routes/system';
 import adminRoutes from './routes/admin';
 import settingsRoutes from './routes/settings';
-import { startTranscriptRetention } from './services/transcriptService';
-import { startChatRetention } from './services/chatService';
+import { startRetention } from './services/retentionService';
+import { startSummaries } from './services/summaryService';
 
 async function main() {
   console.log('[startup] Waiting for PostgreSQL...');
@@ -56,6 +57,7 @@ async function main() {
   app.use('/api/v1/directory-users', directoryUserRoutes);
   app.use('/api/v1/intercom-client', intercomClientRoutes);
   app.use('/api/v1/live', liveRoutes);
+  app.use('/api/v1/conversations', conversationRoutes);
   app.use('/api/v1/system', systemRoutes);
   app.use('/api/v1/admin', adminRoutes);
   app.use('/api/v1/settings', settingsRoutes);
@@ -65,8 +67,8 @@ async function main() {
   app.use(errorHandler);
 
   startHealthScheduler();
-  startTranscriptRetention();
-  startChatRetention();
+  startRetention();
+  startSummaries();
 
   let shuttingDown = false;
   async function shutdown(signal: string) {

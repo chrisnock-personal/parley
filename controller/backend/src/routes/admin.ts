@@ -17,6 +17,7 @@ import { requireAuth, requireRole } from '../middleware/session';
 import { query } from '../db/pool';
 import { audit } from '../services/auditService';
 import config from '../config';
+import { sendArchive } from '../services/archiveTransfer';
 
 const router = Router();
 const adminOnly = requireRole('admin');
@@ -25,11 +26,6 @@ router.use(requireAuth, adminOnly);
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
-// 'local' transfer (below) writes wherever the client's JSON body says to --
-// sandboxed to this one directory so an admin JSON request can't overwrite
-// arbitrary files on the controller-backend container (configs, binaries,
-// etc.) the way an unrestricted path.join+copyFileSync would allow.
-const LOCAL_ARCHIVE_DIR = process.env.LOCAL_ARCHIVE_DIR || path.join(os.tmpdir(), 'parley-archives');
 
 function pgEnv(): NodeJS.ProcessEnv {
   // PGPASSWORD via env, never on the command line (would otherwise leak
@@ -250,40 +246,7 @@ router.post('/db/archive', async (req: Request, res: Response, next: NextFunctio
     const stat = fs.statSync(tmpFile);
     let transferResult = 'No transfer configured';
 
-    if (transfer) {
-      const dest = transfer.path.endsWith('/') ? `${transfer.path}${archiveName}` : transfer.path;
-      if (transfer.type === 'local') {
-        // Resolve as a subpath of LOCAL_ARCHIVE_DIR only, however many
-        // "../" segments transfer.path tries to smuggle in.
-        const resolved = path.resolve(LOCAL_ARCHIVE_DIR, `.${path.sep}${dest}`);
-        if (resolved !== LOCAL_ARCHIVE_DIR && !resolved.startsWith(LOCAL_ARCHIVE_DIR + path.sep)) {
-          throw new Error('local transfer path must stay within the local archive directory');
-        }
-        fs.mkdirSync(path.dirname(resolved), { recursive: true });
-        fs.copyFileSync(tmpFile, resolved);
-        transferResult = `Copied to ${resolved}`;
-      } else if (transfer.type === 'scp') {
-        if (!transfer.host || !transfer.user) {
-          throw new Error('scp transfer requires host and user');
-        }
-        const port = Number(transfer.port ?? 22);
-        if (!Number.isInteger(port) || port < 1 || port > 65535) {
-          throw new Error('scp transfer port must be an integer between 1 and 65535');
-        }
-        // execFile, not exec -args go straight to execve with no shell, so
-        // no client-supplied field (host/user/key_path/path) can ever be
-        // interpreted as shell syntax, however it's quoted.
-        const sshOpts = transfer.key_path
-          ? ['-i', transfer.key_path, '-o', 'StrictHostKeyChecking=no']
-          : ['-o', 'StrictHostKeyChecking=no', '-o', 'PubkeyAuthentication=no'];
-        await execFileAsync('scp', [
-          '-P', String(port), ...sshOpts, tmpFile, `${transfer.user}@${transfer.host}:${dest}`
-        ], { timeout: 120_000 });
-        transferResult = `Transferred via SCP to ${transfer.host}:${dest}`;
-      } else {
-        transferResult = `Transfer type "${transfer.type}" not yet implemented`;
-      }
-    }
+    if (transfer) transferResult = await sendArchive(tmpFile, archiveName, transfer);
 
     try { fs.unlinkSync(tmpFile); } catch { /* best effort */ }
     await audit(req.user!.email, 'database', '00000000-0000-0000-0000-000000000000', 'update', { action: 'archive', days, rows, transfer: transferResult });

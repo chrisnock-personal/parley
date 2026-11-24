@@ -2,7 +2,6 @@
 // by the transcriber service, see transcriber/) and pruning them to the
 // retention in system_settings.
 import { query } from '../db/pool';
-import { getSettings } from './settingsService';
 
 export interface TranscriptLine {
   id: string;               // BIGSERIAL, as a string (pg returns int8 as text)
@@ -31,18 +30,3 @@ export async function listLines(groupId: string, afterId?: string, limit = 100):
   return rows;
 }
 
-async function pruneTranscripts(): Promise<void> {
-  try {
-    const { transcript_retention_days: days } = await getSettings();
-    const result = await query(
-      `DELETE FROM intercom_transcript_lines WHERE created_at < now() - ($1 || ' days')::interval`, [days]);
-    if (result.rowCount) console.log(`[transcripts] Pruned ${result.rowCount} line(s) > ${days}d`);
-  } catch (err) {
-    console.error('[transcripts] Failed to prune:', (err as Error).message);
-  }
-}
-
-export function startTranscriptRetention(): void {
-  void pruneTranscripts();
-  setInterval(() => void pruneTranscripts(), 60 * 60 * 1000);
-}

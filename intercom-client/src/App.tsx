@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, createContext, useContext } from 'react';
 import { DevicePrefs, DeviceSettings, loadDevicePrefs, saveDevicePrefs } from './devices';
 import { HotkeyOverrides, HotkeyRow, Keycap, KeyboardSettings, hotkeyRows, isCapturing, isTypingTarget, loadHotkeys, saveHotkeys } from './hotkeys';
-import { api, Button, ChatMessage, DirectoryEntry, GroupParticipant, IntercomClientSession, LatestIds, LiveState, TranscriptLine } from './api';
+import { api, ShiftSummary, Button, ChatMessage, DirectoryEntry, GroupParticipant, IntercomClientSession, LatestIds, LiveState, TranscriptLine } from './api';
 import { createIntercomClientUa, targetUri } from './sipUa';
 import { markSvg, PRODUCT_NAME } from '../../brand/mark';
 import { TTS_AVAILABLE, ReadAloudPrefs, loadPrefs, savePrefs, primeSpeech, speakNow, useReadAloud, useVoices } from './readAloud';
@@ -724,6 +724,37 @@ function ReadAloudQueue({ ra }: { ra: ReadAloudCtl }) {
   );
 }
 
+// The last shift's AI summary (#29) at the top of a group's conversation,
+// with the earlier ones a click away. Shown only when there's one.
+function ShiftSummaries({ code }: { code: string }) {
+  const [list, setList] = useState<ShiftSummary[]>([]);
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => {
+    let stopped = false;
+    const load = () => api.groupSummaries(code).then((l) => { if (!stopped) setList(l); }).catch(() => { /* keep what we have */ });
+    load();
+    const t = window.setInterval(load, 60_000);
+    return () => { stopped = true; window.clearInterval(t); };
+  }, [code]);
+  if (!list.length) return null;
+  const day = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  const one = (s: ShiftSummary, latest: boolean) => (
+    <div key={s.id} className={`shift-summary${latest ? ' latest' : ''}`}>
+      <div className="shift-summary-label">{latest ? 'LAST SHIFT' : day(s.shift_start)} · {s.label}{s.partial ? ' · so far' : ''} · AI summary</div>
+      <div>{s.summary}</div>
+    </div>
+  );
+  return (
+    <div className="shift-summaries">
+      {one(list[0], true)}
+      {list.length > 1 && (
+        <button className="link-btn" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide earlier shifts' : `Earlier shifts (${list.length - 1})`}</button>
+      )}
+      {showAll && list.slice(1).map((s) => one(s, false))}
+    </div>
+  );
+}
+
 function ConversationSection({ button, selfExt, hasNew, onSeen, ra }: {
   button: Button; selfExt: string; hasNew: boolean; onSeen: (kind: keyof LatestIds, id: string) => void; ra: ReadAloudCtl;
 }) {
@@ -739,8 +770,11 @@ function ConversationSection({ button, selfExt, hasNew, onSeen, ra }: {
     return () => window.removeEventListener('keydown', onKey);
   }, [sheet]);
   const panel = (fill: boolean) => (
-    <ConversationPanel dialCode={button.target_group_dial_code!} selfExt={selfExt}
-      transcribe={transcribe} chat={chat} onSeen={onSeen} fill={fill} readingId={ra.readingId} />
+    <>
+      <ShiftSummaries code={button.target_group_dial_code!} />
+      <ConversationPanel dialCode={button.target_group_dial_code!} selfExt={selfExt}
+        transcribe={transcribe} chat={chat} onSeen={onSeen} fill={fill} readingId={ra.readingId} />
+    </>
   );
   const badge = hasNew ? <span className="new-badge">new</span> : null;
   // Icon only: the card's "Read aloud" tag already says when it's on.

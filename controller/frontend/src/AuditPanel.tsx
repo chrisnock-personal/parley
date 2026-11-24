@@ -39,6 +39,12 @@ const FIELD_TEXT: Record<string, (v: unknown) => string> = {
   dial_code: (v) => `dial code set to *8${v}`,
   siprec_srs_uri: (v) => (v ? `recording server set to ${v}` : 'recording server cleared'),
   transcript_retention_days: (v) => `transcripts and chat kept for ${v} days`,
+  keep_days: (v) => (v === null ? 'transcripts and chat kept as Settings' : v === 0 ? "transcripts and chat not kept" : `transcripts and chat kept for ${v} days`),
+  archive_enabled: (v) => `archive before deleting turned ${onOff(v)}`,
+  archive_transfer: () => 'archive destination changed',
+  summaries_enabled: (v) => `shift summaries turned ${onOff(v)}`,
+  shift_starts: (v) => `shifts start at ${Array.isArray(v) ? v.join(', ') : v}`,
+  shift_timezone: (v) => `shift time zone set to ${v}`,
 };
 
 /** What happened, in words, from the entry's subject and metadata. */
@@ -58,6 +64,10 @@ export function describe(e: AuditLogEntry, groups: Group[]): string {
     if (a === 'purge') return `Purged ${m.table} older than ${m.days} days (${m.deleted ?? 0} rows)`;
     if (a === 'archive') return `Archived rows older than ${m.days} days`;
     return a ? `Database ${a}` : 'Database';
+  }
+  if (e.entity_type === 'conversations') {
+    if (e.action === 'export') return `Exported ${m.rows ?? 0} conversation lines (${m.format === 'csv' ? 'CSV' : 'text'})`;
+    if (m.action === 'summarise') return `Summarise now: ${m.group === 'all' ? 'every group' : `*8${m.group}`}`;
   }
   if (e.action === 'login' || e.action === 'logout') return e.entity_type === 'user' ? 'Console' : 'Intercom client';
   const parts: string[] = [];

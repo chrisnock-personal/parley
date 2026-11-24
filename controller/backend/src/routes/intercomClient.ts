@@ -11,6 +11,7 @@ import { listLines } from '../services/transcriptService';
 import { latestIds, listMessages, postMessage } from '../services/chatService';
 import { buildClientPayload, getSnapshot, groupIdsOf, loadUserCtx, subscribeClient } from '../services/liveHub';
 import { openStream } from '../services/stream';
+import { listSummaries, shiftLabel } from '../services/summaryService';
 
 const router = Router();
 
@@ -187,6 +188,21 @@ router.post('/groups/:code/chat', requireIntercomClientAuth, async (req, res, ne
 // by anyone with a button for that group whether or not they've joined it.
 // `?after=<id>` returns only newer lines -the client polls this way.
 // `transcribing` tells the client whether to show the panel at all.
+// The group's latest shift summaries (#29), for anyone with a button for it,
+// joined or not, like the transcript.
+router.get('/groups/:code/summaries', requireIntercomClientAuth, async (req, res, next) => {
+  try {
+    const buttons = await listButtons(req.intercomClientUser!.id);
+    if (!buttons.some((b) => b.button_type === 'group' && b.target_group_dial_code === req.params.code)) {
+      return res.status(404).json({ error: 'Not one of your groups' });
+    }
+    const s = await getSettings();
+    const list = await listSummaries({ code: req.params.code, limit: 5 });
+    res.json(list.map((x) => ({ id: x.id, shift_start: x.shift_start, shift_end: x.shift_end, summary: x.summary, partial: x.partial,
+      label: shiftLabel({ start: new Date(x.shift_start), end: new Date(x.shift_end) }, s.shift_timezone) })));
+  } catch (err) { next(err); }
+});
+
 router.get('/groups/:code/transcript', requireIntercomClientAuth, async (req, res, next) => {
   try {
     const buttons = await listButtons(req.intercomClientUser!.id);

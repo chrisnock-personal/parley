@@ -16,12 +16,13 @@ WORKDIR /app
 # `postgresql-client` package installs v15, and pg_dump hard-refuses to run
 # against a newer server ("aborting because of server version mismatch") —
 # confirmed by boot-testing, not just a theoretical concern. PGDG's own apt
-# repo is added here to get postgresql-client-16 specifically.
+# repo is added here to get postgresql-client-16 specifically. openssh-client
+# is for archives sent by SCP (Backups, and transcripts before deletion).
 RUN apt-get update && apt-get install -y --no-install-recommends wget gnupg ca-certificates \
  && install -d /usr/share/postgresql-common/pgdg \
  && wget --quiet -O /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
- && apt-get update && apt-get install -y --no-install-recommends postgresql-client-16 \
+ && apt-get update && apt-get install -y --no-install-recommends postgresql-client-16 openssh-client \
  && apt-get purge -y wget gnupg \
  && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*

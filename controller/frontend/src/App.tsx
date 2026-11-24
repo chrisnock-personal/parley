@@ -2,6 +2,7 @@
 // People and Groups, and (admins) Settings, Health, Audit and Backups.
 // Shared data (people, groups, live status) is loaded here and handed to
 // the pages; live status is polled every 3 s.
+import ConversationsPage from './ConversationsPage';
 import { useCallback, useEffect, useState } from 'react';
 import { api, DirectoryUser, Group, LiveCall, LiveRegistration, LiveTalking, SessionUser } from './api';
 import { markSvg, PRODUCT_NAME } from '../../../brand/mark';
@@ -54,11 +55,12 @@ function Login({ onLoggedIn }: { onLoggedIn: (u: SessionUser) => void }) {
 }
 
 // ── Shell ───────────────────────────────────────────────────────────────────
-type View = 'live' | 'people' | 'groups' | 'settings' | 'health' | 'audit' | 'backups';
+type View = 'live' | 'people' | 'groups' | 'conversations' | 'settings' | 'health' | 'audit' | 'backups';
 const MAIN_NAV: { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
   { id: 'live', label: 'Live', icon: 'live' },
   { id: 'people', label: 'People', icon: 'people' },
   { id: 'groups', label: 'Groups', icon: 'groups' },
+  { id: 'conversations', label: 'Conversations', icon: 'chat' },
 ];
 const SYSTEM_NAV: typeof MAIN_NAV = [
   { id: 'settings', label: 'Settings', icon: 'settings' },
@@ -148,7 +150,7 @@ export default function App() {
     <div className="c-shell">
       <nav className="c-nav" aria-label="Console">
         <div className="c-brand"><Mark size={24} /> {PRODUCT_NAME} <span>Console</span></div>
-        {MAIN_NAV.map(navButton)}
+        {MAIN_NAV.filter((n) => n.id !== 'conversations' || canEdit).map(navButton)}
         {systemNav.length > 0 && <div className="c-nav-head">System</div>}
         {systemNav.map(navButton)}
         <div className="c-grow" />
@@ -173,6 +175,7 @@ export default function App() {
           <GroupsPage groups={groups} users={users} calls={calls} talking={talking}
             canEdit={canEdit} isAdmin={isAdmin} onChanged={loadData} onError={onError} />
         )}
+        {current === 'conversations' && canEdit && <ConversationsPage groups={groups} users={users} onError={onError} />}
         {current === 'settings' && <div className="c-page c-narrow"><div className="c-page-head"><h1>Settings</h1></div><SettingsPanel onError={onError} /></div>}
         {current === 'health' && <div className="c-page c-narrow"><div className="c-page-head"><h1>Health</h1></div><HealthPanel onError={onError} /></div>}
         {current === 'audit' && <AuditPanel groups={groups} onError={onError} />}

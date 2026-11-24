@@ -11,6 +11,7 @@ export interface Group {
   dial_code: string;
   transcribe_enabled: boolean; // live transcription by the transcriber service (migration 013)
   chat_enabled: boolean;       // typed group chat (migration 016)
+  keep_days: number | null;    // transcripts/chat kept this many days; null = Settings, 0 = don't keep (#26)
   created_at: string;
   updated_at: string;
 }
@@ -116,7 +117,7 @@ export async function createGroup(
 export async function updateGroup(
   actor: string,
   id: string,
-  fields: { name?: string; description?: string; mode?: 'talkback' | 'announce'; ptt_default?: boolean; dial_code?: string; transcribe_enabled?: boolean; chat_enabled?: boolean }
+  fields: { name?: string; description?: string; mode?: 'talkback' | 'announce'; ptt_default?: boolean; dial_code?: string; transcribe_enabled?: boolean; chat_enabled?: boolean; keep_days?: number | null }
 ): Promise<Group> {
   const current = await getGroup(id);
   const name = fields.name ?? current.name;
@@ -126,12 +127,18 @@ export async function updateGroup(
   const dialCode = fields.dial_code?.trim() || current.dial_code;
   const transcribe = fields.transcribe_enabled ?? current.transcribe_enabled;
   const chat = fields.chat_enabled ?? current.chat_enabled;
+  let keepDays = current.keep_days;
+  if (fields.keep_days !== undefined) {
+    const k = fields.keep_days;
+    if (k !== null && (!Number.isInteger(k) || k < 0 || k > 3650)) throw createError('keep_days must be null (as Settings), 0 (don\'t keep) or 1-3650', 400);
+    keepDays = k;
+  }
 
   const g = await queryOne<Group>(
     `UPDATE intercom_groups SET name = $1, description = $2, mode = $3, ptt_default = $4, dial_code = $5,
-            transcribe_enabled = $6, chat_enabled = $7, updated_by = $8
+            transcribe_enabled = $6, chat_enabled = $7, keep_days = $10, updated_by = $8
      WHERE id = $9 RETURNING *`,
-    [name, description, mode, pttDefault, dialCode, transcribe, chat, actor, id]
+    [name, description, mode, pttDefault, dialCode, transcribe, chat, actor, id, keepDays]
   );
   if (!g) throw createError('Group not found', 404);
   return g;

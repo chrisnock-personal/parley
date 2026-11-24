@@ -97,8 +97,22 @@ Switched on per group in the console:
 With both on, spoken and typed lines share one **Conversation** timeline,
 marked *said* or *typed*, with an Everything / Spoken / Typed filter. Anyone
 with a button for the group can read it, joined or not, and a *new* badge
-marks unread lines. Lines are kept for the retention set under Settings,
-then deleted.
+marks unread lines.
+
+Transcripts and chat are a **working aid** for catching up, not the record
+(SIP-REC recording is). They're kept for the days set under Settings, or a
+group's own setting: a set number of days, or **Don't keep** (lines still
+show live but are deleted after 15 minutes). Deletion is checked every 5
+minutes. With **Archive before deleting** on, lines are first written to a
+dated JSONL file per group per day, on the `parley-archives` volume or by
+SCP to another server, and nothing is deleted until the archive is written.
+
+**Shift summaries**: when a shift ends (start times and time zone under
+Settings), each group that had anything said or typed gets a short AI
+summary from the server's own Ollama (`OLLAMA_URL`, `OLLAMA_MODEL`;
+nothing leaves the server). The newest sits at the top of the group's
+conversation with the earlier ones a click away, and summaries are kept for
+a year, after the lines are gone. Groups set to Don't keep aren't summarised.
 
 ![The Production conversation with spoken and typed lines, and Studio Floor's transcript read without joining](docs/images/04-conversation.png)
 
@@ -152,7 +166,7 @@ Control Centre instead.
 
 ### Admin console
 A separate console at `/` with a sidebar: **Live**, **People**, **Groups**,
-and for admins **Settings**, **Health**, **Audit** and **Backups**. Console
+**Conversations** (editors and admins), and for admins **Settings**, **Health**, **Audit** and **Backups**. Console
 users are viewers, editors or admins (JWT roles); actions a role can't take
 are greyed out with the reason.
 
@@ -169,10 +183,15 @@ are greyed out with the reason.
   `intercom_group_mutes`; pbx-core loads them at start and every minute).
 - **People**: everyone with a client login. Name, extension, login on/off,
   Record calls (admin only), their groups and ICM keys, password reset.
-- **Groups**: talk mode, Transcribe and Chat, who has the group (give it to
-  several people in one place) and who's in it now.
-- **Settings**: the SIP-REC recording server, and how long transcripts and
-  chat are kept.
+- **Groups**: talk mode, Transcribe and Chat, how long its transcripts and
+  chat are kept, who has the group (give it to several people in one
+  place) and who's in it now.
+- **Conversations**: search what's still kept of every group's transcripts
+  and chat by group, person, time and words; export the results as text or
+  CSV (audited); and read the shift summaries, or **Summarise now** for the
+  current shift so far.
+- **Settings**: the SIP-REC recording server, how long transcripts and chat
+  are kept, archiving them before deletion, and shift summaries.
 - **Health**: host CPU/memory/disk, database size and table sizes,
   pbx-core reachability, and each container's logs (over the podman API
   socket; see below).

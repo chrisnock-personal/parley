@@ -67,6 +67,8 @@ export interface GroupParticipant {
   muted?: boolean; // muted from the console (issue #9): still hears, can't be heard
 }
 
+export interface ShiftSummary { id: string; shift_start: string; shift_end: string; summary: string; partial: boolean; label: string }
+
 export interface IntercomClientSession {
   name: string;
   extension: string;
@@ -149,6 +151,10 @@ export const api = {
   },
 
   // dial code -> who's in that group right now (see the backend route).
+  /** The group's latest shift summaries (#29), newest first. */
+  groupSummaries(code: string): Promise<ShiftSummary[]> {
+    return req(`/groups/${encodeURIComponent(code)}/summaries`);
+  },
   groupParticipants(): Promise<LiveState> {
     return req('/groups/participants');
   },

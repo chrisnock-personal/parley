@@ -53,6 +53,7 @@ const PATHS: Record<string, string> = {
   plus: 'M12 5v14 M5 12h14',
   x: 'M6 6l12 12 M18 6L6 18',
   mic: 'M9 3h6v11H9z M5 11a7 7 0 0 0 14 0 M12 18v3',
+  chat: 'M4 5h16v11H9l-5 4z M8 9h8 M8 12h5',
   search: 'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14 M21 21l-4.3-4.3',
 };
 export function Icon({ name, size = 16 }: { name: keyof typeof PATHS; size?: number }) {
