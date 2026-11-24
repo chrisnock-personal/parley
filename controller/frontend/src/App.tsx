@@ -54,6 +54,43 @@ function Login({ onLoggedIn }: { onLoggedIn: (u: SessionUser) => void }) {
   );
 }
 
+// The password a console user was given (for the admin, ADMIN_PASSWORD)
+// has to be replaced before anything else; the server refuses every other
+// request until it is (#36).
+function ChangePassword({ user, onChanged, onLogout }: { user: SessionUser; onChanged: () => void; onLogout: () => void }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [again, setAgain] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (next.length < 12) { setError('The new password needs at least 12 characters.'); return; }
+    if (next !== again) { setError("The new passwords don't match."); return; }
+    setBusy(true);
+    try { await api.changePassword(current, next); onChanged(); }
+    catch (err) { setError((err as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="login-shell">
+      <form className="login-card" onSubmit={submit}>
+        <h1 className="login-brand"><Mark size={28} /> Choose a new password</h1>
+        <div className="sub">{user.email} is still using the password it was given. Choose your own before carrying on.</div>
+        {error && <div className="error-banner">{error}</div>}
+        <label className="c-field">Current password<input value={current} onChange={(e) => setCurrent(e.target.value)} type="password" autoComplete="current-password" required autoFocus /></label>
+        <label className="c-field">New password (12 characters or more)<input value={next} onChange={(e) => setNext(e.target.value)} type="password" autoComplete="new-password" required /></label>
+        <label className="c-field">New password again<input value={again} onChange={(e) => setAgain(e.target.value)} type="password" autoComplete="new-password" required /></label>
+        <button className="c-btn primary wide" disabled={busy} type="submit">{busy ? 'Saving…' : 'Save and continue'}</button>
+        <button className="c-link" type="button" onClick={onLogout} style={{ display: 'block', margin: '14px auto 0' }}>Sign out</button>
+      </form>
+    </div>
+  );
+}
+
 // ── Shell ───────────────────────────────────────────────────────────────────
 type View = 'live' | 'people' | 'groups' | 'conversations' | 'settings' | 'health' | 'audit' | 'backups';
 const MAIN_NAV: { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
@@ -104,7 +141,7 @@ export default function App() {
     api.me().then(setUser).catch(() => {}).finally(() => setCheckedSession(true));
   }, []);
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.password_changed === false) return;
     void loadData(); void loadLive();
     // Live status is pushed whenever it changes (issue #12); while that
     // stream is down the page polls every 3 s and reconnects with a growing delay.
@@ -134,6 +171,11 @@ export default function App() {
 
   if (!checkedSession) return null;
   if (!user) return <div className="app-shell"><Login onLoggedIn={setUser} /></div>;
+  if (user.password_changed === false) {
+    return <div className="app-shell"><ChangePassword user={user}
+      onChanged={() => setUser({ ...user, password_changed: true })}
+      onLogout={() => { void api.logout(); setUser(null); }} /></div>;
+  }
 
   const isAdmin = user.role === 'admin';
   const canEdit = isAdmin || user.role === 'editor';

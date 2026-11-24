@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import config from '../config';
 import { consoleUserState } from '../services/sessionCheck';
 
-export interface SessionUser { id: string; email: string; role: string; }
+export interface SessionUser { id: string; email: string; role: string; password_changed?: boolean; }
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -35,13 +35,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // Still active, and the role as it is now, not as it was at login (issue #25).
     const state = await consoleUserState(payload.id);
     if (!state.active || !state.role) { res.status(401).json({ error: 'This account is no longer active' }); return; }
-    req.user = { id: payload.id, email: payload.email, role: state.role };
+    req.user = { id: payload.id, email: payload.email, role: state.role, password_changed: state.passwordChanged };
   } catch {
     res.status(401).json({ error: 'Invalid or expired session' });
     return;
   }
+  // Until the password they were given is replaced, the only things a user
+  // can do are see who they are, change it, and log out (#36).
+  if (!req.user!.password_changed && !PASSWORD_CHANGE_ALLOWED.has(req.baseUrl + req.path)) {
+    res.status(403).json({ error: 'Change your password first', code: 'password_change_required' });
+    return;
+  }
   next();
 }
+const PASSWORD_CHANGE_ALLOWED = new Set(['/api/v1/auth/me', '/api/v1/auth/change-password', '/api/v1/auth/logout']);
 
 export function requireRole(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {

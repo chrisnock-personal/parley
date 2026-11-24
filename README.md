@@ -286,7 +286,10 @@ podman-compose up -d --build
 ```
 - Controller UI: `https://<host>:8445` (plain `http://<host>:8080` serves
   `localhost` only and redirects everyone else to HTTPS) -sign in
-  with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`. (Host `8445`, not the
+  with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`. That's only the first
+  password: the console asks for your own (12+ characters) before anything
+  else, and the server refuses every other request until then. A forgotten
+  one: start once with `ADMIN_PASSWORD_RESET=true`. (Host `8445`, not the
   usual `8443` -see `docker-compose.yml`'s comment: `8443`/`8444` collide
   with other projects on the reference lab host.)
 - Intercom Client: `http://localhost:8080/intercom-client/` (`getUserMedia`

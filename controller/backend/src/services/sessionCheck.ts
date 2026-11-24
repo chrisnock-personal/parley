@@ -10,15 +10,18 @@ import { queryOne } from '../db/pool';
 
 const TTL_MS = 15_000;
 
-const consoleUsers = new Map<string, { value: { active: boolean; role: string | null }; expiresAt: number }>();
+type ConsoleState = { active: boolean; role: string | null; passwordChanged: boolean };
+const consoleUsers = new Map<string, { value: ConsoleState; expiresAt: number }>();
 const clientUsers = new Map<string, { value: boolean; expiresAt: number }>();
 
-/** A console user: still active, and their current role. */
-export async function consoleUserState(id: string): Promise<{ active: boolean; role: string | null }> {
+/** A console user: still active, their current role, and whether they've
+ * replaced the password they were given (#36). */
+export async function consoleUserState(id: string): Promise<ConsoleState> {
   const hit = consoleUsers.get(id);
   if (hit && hit.expiresAt > Date.now()) return hit.value;
-  const row = await queryOne<{ is_active: boolean; role: string }>(`SELECT is_active, role FROM users WHERE id = $1`, [id]);
-  const value = { active: !!row?.is_active, role: row?.role ?? null };
+  const row = await queryOne<{ is_active: boolean; role: string; password_changed: boolean }>(
+    `SELECT is_active, role, password_changed FROM users WHERE id = $1`, [id]);
+  const value = { active: !!row?.is_active, role: row?.role ?? null, passwordChanged: !!row?.password_changed };
   consoleUsers.set(id, { value, expiresAt: Date.now() + TTL_MS });
   return value;
 }

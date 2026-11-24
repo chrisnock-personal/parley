@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { authenticate, changePassword } from '../services/userService';
 import { signToken, requireAuth } from '../middleware/session';
 import { audit } from '../services/auditService';
+import { forgetConsoleUser } from '../services/sessionCheck';
 import config from '../config';
 
 const router = Router();
@@ -33,6 +34,8 @@ router.post('/change-password', requireAuth, async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body ?? {};
     await changePassword(req.user!.id, currentPassword, newPassword);
+    forgetConsoleUser(req.user!.id);
+    await audit(req.user!.email, 'user', req.user!.id, 'update', { password_changed: true });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });

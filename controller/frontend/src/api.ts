@@ -6,6 +6,7 @@ export interface SessionUser {
   id: string;
   email: string;
   role: string;
+  password_changed?: boolean; // false: must choose a new password first (#36)
 }
 
 export interface Endpoint {
@@ -230,6 +231,9 @@ export const api = {
   },
   async me() {
     return req<{ user: SessionUser }>('/auth/me').then(r => r.user);
+  },
+  changePassword(currentPassword: string, newPassword: string) {
+    return req<{ ok: boolean }>('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) });
   },
   logout() {
     setToken(null);

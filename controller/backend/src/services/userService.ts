@@ -10,15 +10,24 @@ export interface User {
   created_at: string; last_login_at: string | null;
 }
 
+// The admin is created from ADMIN_EMAIL/ADMIN_PASSWORD once (#36):
+// ADMIN_PASSWORD is only the first password, which has to be changed at the
+// first login. Before this, every start reset it to ADMIN_PASSWORD.
+// ADMIN_PASSWORD_RESET=true sets it back to ADMIN_PASSWORD (to be changed
+// again) for a forgotten password; remove the flag afterwards.
 export async function seedDefaultAdmin(): Promise<void> {
   const hash = await bcrypt.hash(config.adminPass, 12);
-  await query(`
+  const created = await query(`
     INSERT INTO users (email, password_hash, role, is_active, password_changed)
     VALUES ($1, $2, 'admin', TRUE, FALSE)
-    ON CONFLICT (LOWER(email)) WHERE is_active = TRUE
-    DO UPDATE SET password_hash = $2, password_changed = FALSE
+    ON CONFLICT (LOWER(email)) WHERE is_active = TRUE DO NOTHING
   `, [config.adminEmail, hash]);
-  console.log(`[users] Admin seeded: ${config.adminEmail}`);
+  if (created.rowCount) { console.log(`[users] Admin created: ${config.adminEmail} (must change the password at first login)`); return; }
+  if (process.env.ADMIN_PASSWORD_RESET === 'true') {
+    await query(`UPDATE users SET password_hash = $2, password_changed = FALSE, is_active = TRUE
+                  WHERE LOWER(email) = LOWER($1)`, [config.adminEmail, hash]);
+    console.warn(`[users] ADMIN_PASSWORD_RESET: ${config.adminEmail}'s password set back to ADMIN_PASSWORD; remove the flag now`);
+  }
 }
 
 export async function authenticate(email: string, password: string): Promise<User> {
@@ -54,6 +63,9 @@ export async function changePassword(id: string, currentPassword: string, newPas
   if (!user) throw createError('User not found', 404);
   const ok = await bcrypt.compare(currentPassword, user.password_hash);
   if (!ok) throw createError('Current password is incorrect', 401);
+  if (typeof newPassword !== 'string' || newPassword.length < 12) throw createError('The new password needs at least 12 characters', 400);
+  if (newPassword === currentPassword) throw createError('The new password has to be different', 400);
+  if (newPassword === config.adminPass) throw createError("The new password can't be the one in .env", 400);
   const hash = await bcrypt.hash(newPassword, 12);
   await query(`UPDATE users SET password_hash = $1, password_changed = TRUE WHERE id = $2`, [hash, id]);
 }
