@@ -88,6 +88,7 @@ export interface Settings {
   shift_starts: string[];
   shift_timezone: string;
   shift_names: Record<string, string>;
+  backup_recipient: string | null;   // age public key (#33)
 }
 
 export interface CertInfo {
@@ -352,9 +353,12 @@ export const api = {
     const blob = await resp.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `intercom-backup-${new Date().toISOString().slice(0, 10)}.sql`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    // .sql, or .sql.age when it's encrypted to the backup key (#33).
+    a.download = /filename="([^"]+)"/.exec(resp.headers.get('Content-Disposition') ?? '')?.[1]
+      ?? `parley-backup-${new Date().toISOString().slice(0, 10)}.sql`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    return a.download;
   },
   async restoreBackup(sqlText: string) {
     return req<{ ok: boolean; message: string }>('/admin/restore', {

@@ -18,6 +18,8 @@ import { query } from '../db/pool';
 import { audit } from '../services/auditService';
 import config from '../config';
 import { sendArchive } from '../services/archiveTransfer';
+import { encryptFile } from '../services/encryption';
+import { getSettings } from '../services/settingsService';
 
 const router = Router();
 const adminOnly = requireRole('admin');
@@ -39,22 +41,26 @@ function pgConnArgs(): string[] {
 
 // ── Backup ──────────────────────────────────────────────────────────────────
 router.post('/backup', async (req: Request, res: Response, next: NextFunction) => {
-  const tmpFile = path.join(os.tmpdir(), `parley-backup-${Date.now()}.sql`);
+  const plain = path.join(os.tmpdir(), `parley-backup-${Date.now()}.sql`);
+  let tmpFile = plain;
   try {
-    await execFileAsync('pg_dump', [...pgConnArgs(), '-f', tmpFile], { env: pgEnv(), timeout: 120_000 });
+    await execFileAsync('pg_dump', [...pgConnArgs(), '-f', plain], { env: pgEnv(), timeout: 120_000 });
+    // Encrypted to the backup key when one is set (#33): .sql.age.
+    tmpFile = await encryptFile(plain, (await getSettings()).backup_recipient);
+    const encrypted = tmpFile !== plain;
     const stat = fs.statSync(tmpFile);
-    res.setHeader('Content-Type', 'application/sql');
-    res.setHeader('Content-Disposition', `attachment; filename="parley-backup-${new Date().toISOString().slice(0,10)}.sql"`);
+    res.setHeader('Content-Type', encrypted ? 'application/octet-stream' : 'application/sql');
+    res.setHeader('Content-Disposition', `attachment; filename="parley-backup-${new Date().toISOString().slice(0,10)}.sql${encrypted ? '.age' : ''}"`);
     res.setHeader('Content-Length', stat.size);
     const stream = fs.createReadStream(tmpFile);
     stream.pipe(res);
     stream.on('end', async () => {
       try { fs.unlinkSync(tmpFile); } catch { /* best effort */ }
-      await audit(req.user!.email, 'database', '00000000-0000-0000-0000-000000000000', 'update', { action: 'backup' });
+      await audit(req.user!.email, 'database', '00000000-0000-0000-0000-000000000000', 'update', { action: 'backup', encrypted });
     });
     stream.on('error', next);
   } catch (e) {
-    try { fs.unlinkSync(tmpFile); } catch { /* best effort */ }
+    for (const f of [plain, tmpFile]) { try { fs.unlinkSync(f); } catch { /* best effort */ } }
     next(e);
   }
 });
@@ -68,6 +74,9 @@ router.post('/restore', express.text({ type: '*/*', limit: '50mb' }),
   async (req: Request, res: Response, next: NextFunction) => {
     const tmpFile = path.join(os.tmpdir(), `parley-restore-${Date.now()}.sql`);
     try {
+      if (typeof req.body === 'string' && req.body.startsWith('age-encryption.org')) {
+        throw new Error('This backup is encrypted. Decrypt it with your backup key first (age -d -i key.txt file.sql.age > file.sql), then restore the .sql file');
+      }
       if (typeof req.body !== 'string' || !req.body.startsWith('--')) {
         throw new Error('Invalid backup file -must be a PostgreSQL SQL dump');
       }
@@ -243,10 +252,11 @@ router.post('/db/archive', async (req: Request, res: Response, next: NextFunctio
     if (!Number.isInteger(days) || days < 0) {
       return res.status(400).json({ error: 'days must be a non-negative integer' });
     }
-    const archiveName = `parley-archive-${new Date().toISOString().slice(0,10)}-${days}d.sql.gz`;
-    const tmpFile = path.join(os.tmpdir(), archiveName);
-
-    const rows = await writeArchive(tmpFile, days);
+    const plainName = `parley-archive-${new Date().toISOString().slice(0,10)}-${days}d.sql.gz`;
+    const rows = await writeArchive(path.join(os.tmpdir(), plainName), days);
+    // Encrypted to the backup key when one is set (#33): .sql.gz.age.
+    const tmpFile = await encryptFile(path.join(os.tmpdir(), plainName), (await getSettings()).backup_recipient);
+    const archiveName = path.basename(tmpFile);
     const stat = fs.statSync(tmpFile);
     let transferResult = 'No transfer configured';
 

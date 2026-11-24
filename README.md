@@ -380,6 +380,20 @@ the `parley-tls-custom` volume (the backend never sees the local CA's key);
 restart, and back to its own if they're removed or expire. The card shows
 the certificate actually being served.
 
+### Encrypted backups and archives
+Settings → *Encrypt backups and archives* takes an [age](https://age-encryption.org)
+public key. With one set, database backups (downloaded as `.sql.age`),
+Backups archives (`.sql.gz.age`) and transcript/chat archives
+(`.jsonl.age`) are encrypted before they're downloaded or written anywhere.
+Parley only has the public key, so whoever takes over the server or copies
+the files can't read them; keep the private key elsewhere:
+```bash
+age-keygen -o parley-backup.key              # prints the public key to paste in
+age -d -i parley-backup.key parley-backup-2026-11-24.sql.age > backup.sql
+```
+Restore takes the decrypted `.sql`. The live database itself isn't
+encrypted by Parley: use disk encryption on the host for that.
+
 ### Setting up an intercom client
 1. Console → **People** → add a person (name, extension, client login
    password), then give them groups and ICM keys (the people they can call

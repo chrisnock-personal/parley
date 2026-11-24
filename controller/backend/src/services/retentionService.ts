@@ -16,6 +16,7 @@ import * as path from 'path';
 import { query } from '../db/pool';
 import { getSettings } from './settingsService';
 import { sendArchive } from './archiveTransfer';
+import { encryptFile } from './encryption';
 
 const TICK_MS = 5 * 60 * 1000;
 const DONT_KEEP_INTERVAL = '15 minutes';
@@ -24,7 +25,7 @@ const SUMMARY_KEEP_DAYS = 365;
 interface ArchiveRow { kind: 'said' | 'typed'; id: string; at: Date; extension: string; name: string | null; text: string }
 
 async function archiveAndDelete(group: { id: string; dial_code: string }, interval: string,
-  transfer: Parameters<typeof sendArchive>[2]): Promise<number> {
+  transfer: Parameters<typeof sendArchive>[2], recipient: string | null): Promise<number> {
   const { rows } = await query<ArchiveRow>(
     `SELECT 'said' AS kind, id::text, spoken_at AS at, speaker_extension AS extension, speaker_name AS name, text
        FROM intercom_transcript_lines WHERE group_id = $1 AND created_at < now() - $2::interval
@@ -43,8 +44,11 @@ async function archiveAndDelete(group: { id: string; dial_code: string }, interv
     const name = `parley-${group.dial_code}-${day}-${stamp}.jsonl`;
     const tmp = path.join(os.tmpdir(), name);
     fs.writeFileSync(tmp, list.map((r) => JSON.stringify({ kind: r.kind, id: r.id, at: r.at.toISOString(), extension: r.extension, name: r.name, text: r.text })).join('\n') + '\n');
-    try { await sendArchive(tmp, name, transfer, true); }
-    finally { try { fs.unlinkSync(tmp); } catch { /* best effort */ } }
+    let file = tmp;
+    try {
+      file = await encryptFile(tmp, recipient); // #33: .jsonl.age when a backup key is set
+      await sendArchive(file, path.basename(file), transfer, true);
+    } finally { for (const f of [tmp, file]) { try { fs.unlinkSync(f); } catch { /* best effort */ } } }
   }
   const said = rows.filter((r) => r.kind === 'said').map((r) => r.id);
   const typed = rows.filter((r) => r.kind === 'typed').map((r) => r.id);
@@ -63,7 +67,7 @@ export async function runRetention(): Promise<void> {
       const interval = keep === 0 ? DONT_KEEP_INTERVAL : `${keep} days`;
       try {
         if (s.archive_enabled && keep > 0) {
-          const n = await archiveAndDelete(g, interval, s.archive_transfer);
+          const n = await archiveAndDelete(g, interval, s.archive_transfer, s.backup_recipient);
           if (n) console.log(`[retention] ${g.dial_code}: archived and deleted ${n} line(s) > ${interval}`);
         } else {
           const t = await query(`DELETE FROM intercom_transcript_lines WHERE group_id = $1 AND created_at < now() - $2::interval`, [g.id, interval]);

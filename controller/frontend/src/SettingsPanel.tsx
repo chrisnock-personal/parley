@@ -21,6 +21,7 @@ export default function SettingsPanel({ onError }: { onError: (msg: string) => v
   const [summariesOn, setSummariesOn] = useState(false);
   const [shifts, setShifts] = useState<ShiftRow[]>([]);
   const [timezone, setTimezone] = useState('UTC');
+  const [recipient, setRecipient] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -32,6 +33,7 @@ export default function SettingsPanel({ onError }: { onError: (msg: string) => v
     setSummariesOn(s.summaries_enabled);
     setShifts(s.shift_starts.map((time) => ({ time, name: s.shift_names?.[time] ?? '' })));
     setTimezone(s.shift_timezone);
+    setRecipient(s.backup_recipient ?? '');
   };
   const load = useCallback(async () => {
     try { apply(await api.getSettings()); } catch (err) { onError((err as Error).message); }
@@ -52,6 +54,7 @@ export default function SettingsPanel({ onError }: { onError: (msg: string) => v
         shift_starts: rows.map((r) => r.time),
         shift_names: Object.fromEntries(rows.filter((r) => r.name.trim()).map((r) => [r.time, r.name.trim()])),
         shift_timezone: timezone.trim(),
+        backup_recipient: recipient.trim() || null,
       }));
       setMessage('Settings saved.');
     } catch (err) { onError((err as Error).message); }
@@ -118,6 +121,20 @@ export default function SettingsPanel({ onError }: { onError: (msg: string) => v
             )}
           </div>
         )}
+      </section>
+
+      <section className="c-card c-set-card">
+        <h2 className="c-set-h">Encrypt backups and archives</h2>
+        <p className="c-help">
+          With a backup key, every database backup, Backups archive and transcript archive is encrypted before it's
+          downloaded or written anywhere. Parley only gets the public half, so it can make these files but not read
+          them: keep the private half somewhere else. Make a pair with <code>age-keygen -o parley-backup.key</code>{' '}
+          (it prints the public key), and decrypt with <code>age -d -i parley-backup.key file.age</code>.
+        </p>
+        <label className="c-field">Backup public key (age)
+          <input className="c-mono-input" value={recipient} placeholder="age1… (empty: not encrypted)" onChange={(e) => setRecipient(e.target.value)} />
+        </label>
+        {!recipient.trim() && <p className="c-help warn">Backups and archives are written unencrypted.</p>}
       </section>
 
       <section className="c-card c-set-card">

@@ -2,6 +2,7 @@
 // migration 013). Only known keys are readable/writable, each validated.
 import { query } from '../db/pool';
 import { createError } from '../middleware/errorHandler';
+import { checkRecipient } from './encryption';
 
 /** Where archived transcript/chat files go (#28): the same choices as the
  * Backups archive. */
@@ -20,12 +21,13 @@ export interface Settings {
   shift_starts: string[];             // "HH:MM", sorted
   shift_timezone: string;             // IANA zone the shift times are in
   shift_names: Record<string, string>; // optional name per start time, e.g. {"06:00": "Day"}
+  backup_recipient: string | null;    // age public key backups and archives are encrypted to (#33)
 }
 
 const DEFAULTS: Settings = {
   siprec_srs_uri: null, transcript_retention_days: 30,
   archive_enabled: false, archive_transfer: { type: 'local', path: 'transcripts' },
-  summaries_enabled: false, shift_starts: ['06:00', '14:00', '22:00'], shift_timezone: 'UTC', shift_names: {},
+  summaries_enabled: false, shift_starts: ['06:00', '14:00', '22:00'], shift_timezone: 'UTC', shift_names: {}, backup_recipient: null,
 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -59,6 +61,7 @@ export async function getSettings(): Promise<Settings> {
     shift_starts: starts.length ? [...new Set(starts)].sort() : DEFAULTS.shift_starts,
     shift_timezone: raw.get('shift_timezone')?.trim() || DEFAULTS.shift_timezone,
     shift_names: parseNames(raw.get('shift_names')),
+    backup_recipient: raw.get('backup_recipient')?.trim() || null,
   };
 }
 
@@ -125,6 +128,12 @@ export async function updateSettings(actor: string, fields: Partial<Settings>): 
       if (name) clean[k] = name;
     }
     writes.push(['shift_names', JSON.stringify(clean)]);
+  }
+
+  if (fields.backup_recipient !== undefined) {
+    const r = fields.backup_recipient?.trim() || null;
+    if (r) checkRecipient(r);
+    writes.push(['backup_recipient', r]);
   }
 
   for (const [key, value] of writes) {

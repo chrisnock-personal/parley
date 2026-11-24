@@ -26,7 +26,7 @@ export default function DatabasePanel({ onError }: { onError: (msg: string) => v
 
   async function runBackup() {
     setBusy('backup'); setMessage(null);
-    try { await api.downloadBackup(); setMessage('Backup downloaded.'); }
+    try { const name = await api.downloadBackup(); setMessage(name.endsWith('.age') ? `Backup downloaded, encrypted to the backup key: ${name}` : `Backup downloaded: ${name}`); }
     catch (err) { onError((err as Error).message); }
     finally { setBusy(null); }
   }

@@ -44,6 +44,7 @@ const FIELD_TEXT: Record<string, (v: unknown) => string> = {
   archive_transfer: () => 'archive destination changed',
   summaries_enabled: (v) => `shift summaries turned ${onOff(v)}`,
   shift_names: () => 'shift names changed',
+  backup_recipient: (v) => (v ? 'backups and archives encrypted to a new key' : 'backup encryption turned off'),
   tls_certificate: (v) => (v === 'local CA' ? "HTTPS certificate set back to Parley's own" : `HTTPS certificate uploaded: ${v}`),
   forgot_host_key: (v) => `pinned host key for ${v} forgotten`,
   shift_starts: (v) => `shifts start at ${Array.isArray(v) ? v.join(', ') : v}`,
