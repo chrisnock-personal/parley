@@ -64,7 +64,8 @@ const config = {
   // containers' logs via the libpod HTTP API over a unix socket. Widens this
   // container's blast radius to every container on the host, not just this
   // project's -see CLAUDE.md.
-  podmanSocketPath: process.env.PODMAN_SOCKET_PATH || '/run/podman/podman.sock',
+  // The Health page's container logs (#37): log-reader holds the podman socket.
+  logReaderUrl: process.env.LOG_READER_URL || 'http://log-reader:9300',
 };
 
 export default config;

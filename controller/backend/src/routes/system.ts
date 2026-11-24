@@ -225,11 +225,9 @@ router.get('/audit', async (req: Request, res: Response, next: NextFunction) => 
 });
 
 // ── Container log viewer ──────────────────────────────────────────────────
-// Talks to the podman API socket (mounted into this container, see
-// docker-compose.yml + config.podmanSocketPath) directly over Node's http
-// module -no podman CLI installed in the image, this project prefers a
-// thin raw client over a heavy dependency for a single read-only call (same
-// call pbx-core/src/admin.ts made for its own tiny HTTP surface).
+// The services whose logs can be shown. log-reader (#37) keeps the same
+// list and maps names to containers itself; this one is checked first so an
+// unknown name is a plain 404 without a round trip.
 const SERVICE_CONTAINERS: Record<string, string> = {
   postgres:             'parley-postgres',
   'controller-backend': 'parley-controller-backend',
@@ -237,6 +235,7 @@ const SERVICE_CONTAINERS: Record<string, string> = {
   'pbx-core':           'parley-pbx-core',
   rtpengine:            'parley-rtpengine',
   freeswitch:           'parley-freeswitch',
+  transcriber:          'parley-transcriber',
 };
 
 // podman's libpod logs endpoint has been observed (this build) to return
@@ -257,26 +256,26 @@ function stripMultiplexFraming(buf: Buffer): string {
   return buf.toString('utf8');
 }
 
-function fetchContainerLogs(containerName: string, lines: number): Promise<string> {
+// Asks log-reader (#37), the only container with the podman socket; it
+// takes the service name, not a container name, and checks it itself.
+function fetchContainerLogs(service: string, lines: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    const req = http.request({
-      socketPath: config.podmanSocketPath,
-      path: `/v4.0.0/libpod/containers/${containerName}/logs?stdout=true&stderr=true&tail=${lines}`,
-      method: 'GET',
-      timeout: 10_000,
+    const req = http.request(`${config.logReaderUrl}/logs/${encodeURIComponent(service)}?lines=${lines}`, {
+      method: 'GET', timeout: 10_000,
+      headers: { Authorization: `Bearer ${config.internalToken}` },
     }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
         if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`podman socket HTTP ${res.statusCode}`));
+          reject(new Error(`log-reader HTTP ${res.statusCode}`));
           return;
         }
         resolve(stripMultiplexFraming(Buffer.concat(chunks)));
       });
     });
-    req.on('timeout', () => req.destroy(new Error('podman socket request timed out')));
-    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('log-reader timed out')));
+    req.on('error', (e) => reject(new Error(`log-reader unreachable: ${e.message}`)));
     req.end();
   });
 }
@@ -286,8 +285,8 @@ router.get('/logs/:service', async (req: Request, res: Response, next: NextFunct
   if (!containerName) return res.status(404).json({ error: 'Unknown service' });
 
   try {
-    const lineCount = Math.min(parseInt(req.query.lines as string || '100'), 1000);
-    const output = await fetchContainerLogs(containerName, lineCount);
+    const lineCount = Math.min(Math.max(parseInt(req.query.lines as string || '100') || 100, 1), 1000);
+    const output = await fetchContainerLogs(req.params.service, lineCount);
     const allLines = output.split('\n').filter(Boolean);
     const errors = allLines.filter(l =>
       l.toLowerCase().includes('error') || l.toLowerCase().includes('warn') || l.toLowerCase().includes('fatal')

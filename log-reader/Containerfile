@@ -1,0 +1,7 @@
+# log-reader (#37): holds the podman socket so controller-backend doesn't.
+FROM docker.io/library/node:22-bookworm-slim
+WORKDIR /app
+COPY log-reader/server.js ./
+USER node
+EXPOSE 9300
+CMD ["node", "server.js"]

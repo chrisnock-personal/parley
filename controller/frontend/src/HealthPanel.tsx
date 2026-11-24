@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, SystemHealth, ContainerLogs } from './api';
 
-const SERVICES = ['pbx-core', 'controller-backend', 'controller-frontend', 'rtpengine', 'freeswitch', 'postgres'] as const;
+const SERVICES = ['pbx-core', 'controller-backend', 'controller-frontend', 'rtpengine', 'freeswitch', 'transcriber', 'postgres'] as const;
 
 function PctBar({ pct }: { pct: number }) {
   const color = pct >= 85 ? 'var(--red)' : pct >= 65 ? 'var(--amber)' : 'var(--green)';

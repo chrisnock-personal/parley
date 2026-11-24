@@ -42,26 +42,12 @@ services:
       context: .
       dockerfile: controller/backend/Containerfile
     container_name: parley-controller-backend
-    # Rootless podman remaps container root to a subordinate host UID (see
-    # /etc/subuid), NOT the invoking host user -so a container running as
-    # root gets EACCES on the mounted podman.sock below (owned by the host
-    # user, mode 0660, no "other" access). userns_mode: keep-id + running as
-    # the image's built-in `node` user (uid 1000, matching this host's user)
-    # makes the container's uid 1000 map to the SAME host uid 1000, so it
-    # can actually read/write the socket.
+    # The image has no USER; run as its built-in `node` user (uid 1000).
+    # keep-id maps it to the host user, who owns the parley-archives volume
+    # (podman-compose doesn't apply :U to it). No podman socket here any more
+    # (#37): the Health page's logs come from log-reader, so no label:disable.
     userns_mode: keep-id
     user: "1000:1000"
-    # SELinux (Enforcing on this Fedora host) denies container_t processes
-    # `connectto` on sockets labeled container_runtime_t -the podman API
-    # socket's own label -regardless of the container_connect_any boolean
-    # or file-level :Z relabeling (both tried first, confirmed via
-    # `journalctl | grep avc` that this exact denial persisted after both).
-    # No boolean covers this specific case; disabling SELinux confinement
-    # for just this one container is simpler and more honestly scoped than
-    # a custom audit2allow policy module that's not really "for" anything
-    # else this container does.
-    security_opt:
-      - label:disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,14 +80,8 @@ services:
       PBX_BASE_URL:     "http://${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}:9080"
       # The transcriber's who's-talking endpoint (host network, like pbx-core).
       TRANSCRIBER_URL:  "http://${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}:9081"
-      # System Health page's log viewer (routes/system.ts) talks to this
-      # over HTTP to fetch other containers' logs. SECURITY NOTE: this gives
-      # controller-backend control-plane visibility into EVERY container on
-      # the host, not just this project's 6 -a real widening of the
-      # security boundary, accepted deliberately for this lab. Requires a
-      # one-time host prerequisite: `systemctl --user enable --now
-      # podman.socket` (rootless podman) -see CLAUDE.md.
-      PODMAN_SOCKET_PATH: /run/podman/podman.sock
+      # The Health page's container logs, from log-reader (#37).
+      LOG_READER_URL: http://log-reader:9300
       # Archives (the Backups archive and transcripts/chat before deletion,
       # #28) are written under this folder, on the parley-archives volume.
       LOCAL_ARCHIVE_DIR: /var/lib/parley/archive
@@ -109,19 +89,39 @@ services:
       OLLAMA_URL:       ${OLLAMA_URL:-http://host.containers.internal:11434}
       OLLAMA_MODEL:     ${OLLAMA_MODEL:-qwen2.5:7b}
     volumes:
-      # Hardcoded to uid 1000 (confirmed via `id -u` on this lab host) —
-      # adjust if the deployment user ever differs. `:Z` relabels the socket
-      # for this container's exclusive SELinux context -this host runs
-      # SELinux Enforcing (Fedora), and without it every access was denied
-      # (even a plain `ls` on the mounted path failed with Permission
-      # denied) regardless of the uid/keep-id fix above.
-      - /run/user/1000/podman/podman.sock:/run/podman/podman.sock:Z
-      # :U so the container's user (uid 1000, keep-id) owns it.
+      # :U so the container's user (uid 1000) owns a new volume.
       - parley-archives:/var/lib/parley/archive:U
     # Loopback only (security review 2026-11-09, C2): browsers reach the API
-    # through nginx's /api/v1, and this container holds the podman socket.
+    # through nginx's /api/v1.
     ports:
       - "127.0.0.1:3100:3100"
+    restart: unless-stopped
+
+  # The only container with the podman API socket (#37). It answers one
+  # request: the last N log lines of one of Parley's own containers, for a
+  # caller with INTERNAL_API_TOKEN. Not published on any host port; only
+  # controller-backend calls it, over the compose network.
+  log-reader:
+    build:
+      context: .
+      dockerfile: log-reader/Containerfile
+    container_name: parley-log-reader
+    # Rootless podman maps container root to a subordinate host UID, which
+    # gets EACCES on the socket (owned by the host user, mode 0660).
+    # keep-id + uid 1000 makes this container's user the socket's owner.
+    userns_mode: keep-id
+    user: "1000:1000"
+    # SELinux denies container_t `connectto` on the socket's
+    # container_runtime_t label whatever the booleans or :Z say, so this one
+    # small container runs unconfined; everything else stays confined.
+    security_opt:
+      - label:disable
+    environment:
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN in .env}
+    volumes:
+      # Rootless podman's socket for uid 1000; needs `systemctl --user enable
+      # --now podman.socket` on the host.
+      - /run/user/1000/podman/podman.sock:/run/podman/podman.sock:Z
     restart: unless-stopped
 
   controller-frontend:

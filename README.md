@@ -229,9 +229,10 @@ controller-frontend (nginx: console + /intercom-client/ + /ws proxy, HTTP+HTTPS)
                                                                 (Express+TS, Postgres)
 ```
 
-Seven compose services: `postgres`, `controller-backend`,
+Eight compose services: `postgres`, `controller-backend`,
 `controller-frontend` (also serves the intercom client at
-`/intercom-client/`), `pbx-core`, `rtpengine`, `freeswitch`, `transcriber`.
+`/intercom-client/`), `pbx-core`, `rtpengine`, `freeswitch`, `transcriber`,
+and `log-reader` (the Health page's container logs).
 
 - **pbx-core is our own SIP code** in TypeScript on drachtio (registrar,
   direct and group routing, re-INVITE handling, SIP-REC), not a
@@ -319,21 +320,22 @@ Seeding is additive and idempotent: existing extensions and group dial
 codes are never touched, so it's safe to leave on. Production is created with
 live transcription on, so the demo shows it straight away.
 
-### Optional: the Health page's log viewer
-The console's Health page can show live logs from every container over the
-podman API socket. This needs one host-level prerequisite (rootless
-podman):
+### The Health page's log viewer
+The console's Health page shows recent logs from Parley's own containers.
+They come from `log-reader`, a small service that is the only container with
+the podman API socket. It answers one request, the last N lines of one of
+Parley's seven containers, for callers with `INTERNAL_API_TOKEN`; it isn't
+published on any host port, and it builds the podman request itself, so
+nothing can reach the rest of the podman API through it. The backend has no
+socket. It needs one host-level prerequisite (rootless podman):
 ```bash
 systemctl --user enable --now podman.socket
 ```
-On SELinux-enforcing hosts (Fedora/RHEL), `controller-backend` also runs
-with `security_opt: label:disable` in `docker-compose.yml` -SELinux
-denies a confined container from connecting to the podman socket even with
-the file permissions otherwise correct, and no stock boolean covers that
-specific case. This widens that one container's blast radius (full
-control-plane visibility into every container on the host, not just this
-project's 6) -accepted deliberately for this lab; skip the log viewer
-entirely if you'd rather not take that tradeoff.
+On SELinux-enforcing hosts (Fedora/RHEL), `log-reader` runs with
+`security_opt: label:disable`: SELinux denies a confined container from
+connecting to the podman socket whatever the file permissions, and no stock
+boolean covers it. Every other container stays confined. Without the socket,
+the log viewer shows an error and everything else works.
 
 ### TLS
 `controller-frontend` creates a small **local CA** on first start, and that
@@ -416,6 +418,8 @@ intercom-client/            -real-browser intercom client (Vite/React/TS):
                                directory-user login
 pbx-core/                   -drachtio SIP core: registrar, direct/group
                                routing, rtpengine wrapper, admin status API
+log-reader/                 -the only container with the podman socket: the
+                               Health page's container logs, nothing else
 images/
   rtpengine/                -rtpengine media relay image (Debian package, userspace mode)
   freeswitch/                -group open-mic mixer image (FROM drachtio FS base + conf overlay)
