@@ -1,6 +1,6 @@
 {
   "name": "parley-transcriber",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Live per-group transcription for Parley: taps each member's voice from rtpengine and transcribes it with whisper",
   "main": "dist/index.js",
   "scripts": {
