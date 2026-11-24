@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, ArchiveTransfer, Settings } from './api';
+import { api, ArchiveTransfer, CertInfo, Settings } from './api';
 import { Switch } from './ui';
 
 // Global settings (admin-only), one card per area: the SIP-REC recording
@@ -63,6 +63,8 @@ export default function SettingsPanel({ onError }: { onError: (msg: string) => v
 
   return (
     <div className="c-settings">
+      <TlsCard onError={onError} />
+
       <section className="c-card c-set-card">
         <h2 className="c-set-h">Call recording (SIP-REC)</h2>
         <p className="c-help">
@@ -171,5 +173,73 @@ function HostKey({ onError }: { onError: (msg: string) => void }) {
             <button type="button" className="c-link" onClick={() => void forget()}>Forget it</button></>
         : 'not pinned yet. It\'s pinned the first time Parley sends an archive there.'}
     </p>
+  );
+}
+
+// Your own HTTPS certificate (#32), saved on its own (not with "Save
+// settings"): nginx switches to it within about 10 seconds.
+function TlsCard({ onError }: { onError: (msg: string) => void }) {
+  const [status, setStatus] = useState<{ uploaded: CertInfo | null; serving: CertInfo | null } | null>(null);
+  const [cert, setCert] = useState<{ name: string; text: string } | null>(null);
+  const [key, setKey] = useState<{ name: string; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const load = useCallback(() => { api.tlsStatus().then(setStatus).catch((e) => onError((e as Error).message)); }, [onError]);
+  useEffect(() => { load(); }, [load]);
+  // After a change, look again once nginx has had time to reload.
+  const reloadSoon = () => { window.setTimeout(load, 12_000); window.setTimeout(load, 20_000); };
+  const read = (set: (v: { name: string; text: string } | null) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) { set(null); return; }
+    f.text().then((text) => set({ name: f.name, text })).catch(() => set(null));
+  };
+  const upload = async () => {
+    if (!cert || !key) return;
+    setBusy(true); setNote(null);
+    try {
+      const r = await api.uploadTls(cert.text, key.text);
+      setNote(`Installed ${r.uploaded.names.join(', ') || r.uploaded.subject}. The server switches to it within about 10 seconds; reload this page then.`);
+      setCert(null); setKey(null); load(); reloadSoon();
+    } catch (e) { onError((e as Error).message); } finally { setBusy(false); }
+  };
+  const revert = async () => {
+    if (!window.confirm("Go back to Parley's own certificate? Devices that haven't installed Parley's CA will warn again.")) return;
+    try { await api.removeTls(); setNote("Going back to Parley's own certificate within about 10 seconds."); load(); reloadSoon(); }
+    catch (e) { onError((e as Error).message); }
+  };
+  const s = status?.serving;
+  const own = !!(s && status?.uploaded && s.fingerprint256 === status.uploaded.fingerprint256);
+  const day = (iso: string) => new Date(iso).toLocaleDateString([], { dateStyle: 'medium' });
+  const daysLeft = s ? Math.floor((new Date(s.valid_to).getTime() - Date.now()) / 86_400_000) : 0;
+  return (
+    <section className="c-card c-set-card">
+      <h2 className="c-set-h">HTTPS certificate</h2>
+      <p className="c-help">
+        The console and the client are served over HTTPS. By default Parley makes its own certificate, signed by its
+        own CA, which each device trusts once (download it from <code>/ca.crt</code>). Upload a certificate from your
+        own or your company's CA instead, and devices that already trust that CA need nothing more.
+      </p>
+      {s ? (
+        <div className="c-tls-now">
+          <div><strong>{own ? 'Your certificate' : "Parley's own certificate"}</strong>{status?.uploaded && !own && <span className="c-help warn"> (yours is uploaded but not served yet)</span>}</div>
+          <div className="c-help">{s.names.join(', ') || s.subject}</div>
+          <div className="c-help">Issued by {s.issuer.replace(/^CN=/, '')} · expires {day(s.valid_to)}{daysLeft < 30 ? ` (in ${daysLeft} days)` : ''}</div>
+          <div className="c-help"><code>{s.fingerprint256}</code></div>
+        </div>
+      ) : <p className="c-help">Checking what the server is serving…</p>}
+      <div className="c-set-grid c-tls-files">
+        <label className="c-field">Certificate, with its chain (PEM)
+          <input type="file" accept=".pem,.crt,.cer" onChange={read(setCert)} />
+        </label>
+        <label className="c-field">Private key (PEM, no passphrase)
+          <input type="file" accept=".pem,.key" onChange={read(setKey)} />
+        </label>
+      </div>
+      <div className="c-set-save">
+        <button className="c-btn" disabled={!cert || !key || busy} onClick={() => void upload()}>{busy ? 'Checking…' : 'Upload and use'}</button>
+        {status?.uploaded && <button type="button" className="c-link" onClick={() => void revert()}>Go back to Parley's own</button>}
+        {note && <span className="c-set-saved">{note}</span>}
+      </div>
+    </section>
   );
 }

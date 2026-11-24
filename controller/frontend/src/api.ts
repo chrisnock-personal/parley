@@ -90,6 +90,10 @@ export interface Settings {
   shift_names: Record<string, string>;
 }
 
+export interface CertInfo {
+  subject: string; issuer: string; names: string[]; valid_from: string; valid_to: string; fingerprint256: string; self_issued: boolean;
+}
+
 export interface ConversationLine {
   kind: 'said' | 'typed'; id: string; at: string; group: string; group_name: string;
   extension: string; name: string | null; text: string;
@@ -363,6 +367,9 @@ export const api = {
   getDbStats() { return req<DbStats>('/admin/db/stats'); },
   runVacuum() { return req<{ ok: boolean; message: string }>('/admin/db/vacuum', { method: 'POST' }); },
   getSettings() { return req<Settings>('/settings'); },
+  tlsStatus() { return req<{ uploaded: CertInfo | null; serving: CertInfo | null }>('/settings/tls'); },
+  uploadTls(cert: string, key: string) { return req<{ uploaded: CertInfo }>('/settings/tls', { method: 'PUT', body: JSON.stringify({ cert, key }) }); },
+  removeTls() { return req<void>('/settings/tls', { method: 'DELETE' }); },
   archiveHostKey() { return req<{ host: string | null; port?: number; fingerprints: string[] }>('/settings/archive-host-key'); },
   forgetArchiveHostKey() { return req<void>('/settings/archive-host-key', { method: 'DELETE' }); },
   searchConversations(f: ConversationFilters, offset = 0) {

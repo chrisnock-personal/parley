@@ -85,12 +85,17 @@ services:
       # Archives (the Backups archive and transcripts/chat before deletion,
       # #28) are written under this folder, on the parley-archives volume.
       LOCAL_ARCHIVE_DIR: /var/lib/parley/archive
+      # An uploaded HTTPS certificate goes here for nginx to pick up (#32).
+      TLS_CUSTOM_DIR: /var/lib/parley/tls-custom
       # Shift summaries (#29): the shared Ollama on the host.
       OLLAMA_URL:       ${OLLAMA_URL:-http://host.containers.internal:11434}
       OLLAMA_MODEL:     ${OLLAMA_MODEL:-qwen2.5:7b}
     volumes:
       # :U so the container's user (uid 1000) owns a new volume.
       - parley-archives:/var/lib/parley/archive:U
+      # Where an uploaded HTTPS certificate is written for nginx (#32). Not
+      # the local CA's volume: the backend never sees ca.key.
+      - parley-tls-custom:/var/lib/parley/tls-custom:U
     # Loopback only (security review 2026-11-09, C2): browsers reach the API
     # through nginx's /api/v1.
     ports:
@@ -145,6 +150,9 @@ services:
       HTTPS_PORT: "8445"
     volumes:
       - parley-tls-certs:/etc/nginx/tls
+      # An admin's own certificate (Settings -> HTTPS certificate, #32);
+      # written by controller-backend, only read here.
+      - parley-tls-custom:/etc/nginx/tls-custom:ro
     ports:
       - "8080:80"
       # Host 8443 is taken on this machine by callowl-frontend and 8444 by
@@ -284,3 +292,4 @@ volumes:
   parley-pgdata:
   parley-tls-certs:
   parley-archives:
+  parley-tls-custom:

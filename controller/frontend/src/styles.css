@@ -484,3 +484,7 @@ button.c-btn.wide { width: 100%; }
 .c-shift button { width: 22px; height: 22px; border-radius: 50%; border: none; background: none; color: var(--text-dim); cursor: pointer; font-size: 15px; }
 .c-shift button:hover { background: #343b44; color: var(--text); }
 .c-field .c-help { font-weight: 400; }
+.c-tls-now { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 8px; background: #16191d; border: 1px solid var(--line); font-size: 14px; }
+.c-tls-now code { font-size: 11px; word-break: break-all; }
+.c-tls-files { grid-template-columns: 1fr 1fr; }
+.c-tls-files input[type=file] { height: auto; padding: 8px; }

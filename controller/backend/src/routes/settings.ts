@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from '../middleware/session';
 import { audit } from '../services/auditService';
 import * as settings from '../services/settingsService';
 import { forgetHostKey, pinnedHostKeys } from '../services/archiveTransfer';
+import * as tlsCert from '../services/tlsService';
 
 const router = Router();
 router.use(requireAuth, requireRole('admin'));
@@ -37,6 +38,31 @@ router.delete('/archive-host-key', async (req, res, next) => {
     if (t.type !== 'scp' || !t.host) return res.status(400).json({ error: 'Archiving isn\'t set to SCP' });
     await forgetHostKey(t.host, t.port ?? 22);
     await audit(req.user!.email, 'settings', '00000000-0000-0000-0000-000000000000', 'update', { forgot_host_key: t.host });
+    res.status(204).end();
+  } catch (err) { next(err); }
+});
+
+// Your own HTTPS certificate (#32). The frontend picks a change up within
+// about 10 s, so the response says what was installed; GET shows what
+// nginx is serving now.
+router.get('/tls', async (_req, res, next) => {
+  try { res.json({ uploaded: tlsCert.uploaded(), serving: await tlsCert.serving() }); } catch (err) { next(err); }
+});
+
+router.put('/tls', async (req, res, next) => {
+  try {
+    const { cert, key } = (req.body ?? {}) as { cert?: string; key?: string };
+    const leaf = tlsCert.install(String(cert ?? ''), String(key ?? ''));
+    await audit(req.user!.email, 'settings', '00000000-0000-0000-0000-000000000000', 'update',
+      { tls_certificate: leaf.subject, names: leaf.names, valid_to: leaf.valid_to });
+    res.json({ uploaded: leaf });
+  } catch (err) { next(err); }
+});
+
+router.delete('/tls', async (req, res, next) => {
+  try {
+    tlsCert.remove();
+    await audit(req.user!.email, 'settings', '00000000-0000-0000-0000-000000000000', 'update', { tls_certificate: 'local CA' });
     res.status(204).end();
   } catch (err) { next(err); }
 });

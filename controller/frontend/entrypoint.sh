@@ -112,4 +112,45 @@ sed -e "s/__PBX_HOST__/${PBX_HOST}/g" -e "s/__HTTPS_PORT__/${HTTPS_PORT}/g" \
   -e "s/__RESOLVER__/${RESOLVER}/g" -e "s/__BACKEND_HOST__/${BACKEND_HOST}/g" \
   /etc/nginx/default.conf.template > /etc/nginx/conf.d/default.conf
 
+# Which certificate nginx serves (#32): an admin's own, uploaded in
+# Settings -> HTTPS certificate (the parley-tls-custom volume, read-only
+# here), when it's present, currently valid and matches its key; otherwise
+# the local CA's. Copied into /etc/nginx/active, which nginx.conf points at.
+CUSTOM_DIR=/etc/nginx/tls-custom
+ACTIVE_DIR=/etc/nginx/active
+mkdir -p "$ACTIVE_DIR"
+pubkey_of_cert() { openssl x509 -in "$1" -noout -pubkey 2>/dev/null | openssl sha256 2>/dev/null; }
+pubkey_of_key() { openssl pkey -in "$1" -pubout 2>/dev/null | openssl sha256 2>/dev/null; }
+pick_cert() {
+  if [ -f "$CUSTOM_DIR/cert.pem" ] && [ -f "$CUSTOM_DIR/key.pem" ] \
+     && openssl x509 -in "$CUSTOM_DIR/cert.pem" -noout -checkend 0 >/dev/null 2>&1 \
+     && [ -n "$(pubkey_of_cert "$CUSTOM_DIR/cert.pem")" ] \
+     && [ "$(pubkey_of_cert "$CUSTOM_DIR/cert.pem")" = "$(pubkey_of_key "$CUSTOM_DIR/key.pem")" ]; then
+    cp "$CUSTOM_DIR/cert.pem" "$ACTIVE_DIR/cert.pem"; cp "$CUSTOM_DIR/key.pem" "$ACTIVE_DIR/key.pem"
+    echo "[tls] serving the uploaded certificate: $(openssl x509 -in "$ACTIVE_DIR/cert.pem" -noout -subject)"
+  else
+    [ -f "$CUSTOM_DIR/cert.pem" ] && echo "[tls] the uploaded certificate is expired or doesn't match its key; serving the local CA's"
+    cp "$CERT_FILE" "$ACTIVE_DIR/cert.pem"; cp "$KEY_FILE" "$ACTIVE_DIR/key.pem"
+  fi
+  chmod 600 "$ACTIVE_DIR/key.pem"
+}
+custom_state() { cat "$CUSTOM_DIR/cert.pem" "$CUSTOM_DIR/key.pem" 2>/dev/null | openssl sha256; }
+pick_cert
+
+# Watch for an upload (or its removal) and reload nginx when it changes,
+# after testing the config. Checked every 10 s; also catches a custom
+# certificate expiring (it falls back to the local CA's).
+(
+  last="$(custom_state)"; last_expired=no
+  while sleep 10; do
+    now="$(custom_state)"
+    expired=no; [ -f "$CUSTOM_DIR/cert.pem" ] && ! openssl x509 -in "$CUSTOM_DIR/cert.pem" -noout -checkend 0 >/dev/null 2>&1 && expired=yes
+    if [ "$now" != "$last" ] || [ "$expired" != "$last_expired" ]; then
+      last="$now"; last_expired="$expired"
+      pick_cert
+      if nginx -t >/dev/null 2>&1; then nginx -s reload && echo "[tls] nginx reloaded"; else echo "[tls] nginx -t failed; not reloading"; fi
+    fi
+  done
+) &
+
 exec nginx -g 'daemon off;'

@@ -371,6 +371,15 @@ server-auth usage) and is re-issued automatically within 30 days of expiry.
 If `RTPENGINE_PUBLIC_IP` changes, a new CA is generated and every device
 must install it again.
 
+**Your own certificate** (Settings → *HTTPS certificate*, admins): upload a
+server certificate with its chain and the private key (PEM, no passphrase),
+for example from your company's CA that devices already trust. The backend
+checks the key matches, the dates and the chain order, and writes them to
+the `parley-tls-custom` volume (the backend never sees the local CA's key);
+`controller-frontend` switches to them within about 10 seconds, without a
+restart, and back to its own if they're removed or expire. The card shows
+the certificate actually being served.
+
 ### Setting up an intercom client
 1. Console → **People** → add a person (name, extension, client login
    password), then give them groups and ICM keys (the people they can call
