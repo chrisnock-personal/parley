@@ -740,7 +740,7 @@ function ShiftSummaries({ code }: { code: string }) {
   const day = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
   const one = (s: ShiftSummary, latest: boolean) => (
     <div key={s.id} className={`shift-summary${latest ? ' latest' : ''}`}>
-      <div className="shift-summary-label">{latest ? 'LAST SHIFT' : day(s.shift_start)} · {s.label}{s.partial ? ' · so far' : ''} · AI summary</div>
+      <div className="shift-summary-label">{latest ? (s.partial ? 'THIS SHIFT' : 'LAST SHIFT') : day(s.shift_start)} · {s.label}{s.partial ? ' · so far' : ''} · AI summary</div>
       <div>{s.summary}</div>
     </div>
   );

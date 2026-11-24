@@ -85,9 +85,9 @@ export default function ConversationsPage({ groups, users, onError }: { groups: 
           <option value="">Anyone</option>{users.map((u) => <option key={u.id} value={u.extension}>{u.name} ({u.extension})</option>)}</select></label>
         <label className="c-field small">From<input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="c-field small">To<input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-        <label className="c-field small c-grow">Words<input value={words} onChange={(e) => setWords(e.target.value)} placeholder="anything said or typed" /></label>
         <label className="c-field small">Show<select value={kind} onChange={(e) => setKind(e.target.value)}>
           <option value="">Said and typed</option><option value="said">Said</option><option value="typed">Typed</option></select></label>
+        <label className="c-field small c-grow">Words<input value={words} onChange={(e) => setWords(e.target.value)} placeholder="anything said or typed" /></label>
         <button className="c-btn primary" type="submit" disabled={busy}>{busy ? 'Searching…' : 'Search'}</button>
       </form>
 
