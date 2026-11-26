@@ -67,7 +67,7 @@ export interface GroupParticipant {
   muted?: boolean; // muted from the console (issue #9): still hears, can't be heard
 }
 
-export interface ShiftSummary { id: string; shift_start: string; shift_end: string; summary: string; partial: boolean; label: string }
+export interface ShiftSummary { id: string; shift_start: string; shift_end: string; summary: string; partial: boolean; label: string; current: boolean }
 
 export interface IntercomClientSession {
   name: string;

@@ -6,68 +6,18 @@
 // shift_timezone). Once a minute, if a shift has ended, every group that had
 // anything said or typed in it gets a summary, unless it already has a final
 // one. "Summarise now" summarises the current shift so far (partial); the
-// end-of-shift summary replaces it. Groups set to "don't keep" (keep_days 0)
-// are never summarised. Summaries are made one at a time, so a burst can't
-// pile requests onto the shared GPU.
+// end-of-shift summary replaces it. If that never happens, the label dates
+// the partial once its shift is over (#41). Groups set to "don't keep"
+// (keep_days 0) are never summarised. Summaries are made one at a time, so a
+// burst can't pile requests onto the shared GPU.
 import { query, queryOne } from '../db/pool';
 import { getSettings } from './settingsService';
+import { currentShift, previousShift, shiftLabel, Shift } from './shiftTimes';
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://host.containers.internal:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
 const TICK_MS = 60_000;
 const MAX_LINES = 400;
-
-// ── Shift times ────────────────────────────────────────────────────────────
-
-/** How far `tz` is ahead of UTC at instant `t`, in ms. */
-function tzOffsetMs(t: number, tz: string): number {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
-    timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
-  }).formatToParts(new Date(t)).map((x) => [x.type, x.value]));
-  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(t / 1000) * 1000;
-}
-
-/** The UTC instant of local time y-m-d hh:mm in `tz`. */
-function zonedToUtc(y: number, m: number, d: number, hh: number, mm: number, tz: string): number {
-  const naive = Date.UTC(y, m, d, hh, mm);
-  const first = naive - tzOffsetMs(naive, tz);
-  return naive - tzOffsetMs(first, tz); // second pass: right across a daylight-saving change
-}
-
-/** Every shift start from two days before `now` to two days after, as UTC ms, sorted. */
-function boundaries(now: number, starts: string[], tz: string): number[] {
-  const out: number[] = [];
-  for (let dayShift = -2; dayShift <= 2; dayShift++) {
-    const local = new Date(now + tzOffsetMs(now, tz) + dayShift * 86_400_000);
-    for (const s of starts) {
-      const [hh, mm] = s.split(':').map(Number);
-      out.push(zonedToUtc(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), hh, mm, tz));
-    }
-  }
-  return [...new Set(out)].sort((a, b) => a - b);
-}
-
-export interface Shift { start: Date; end: Date }
-
-export function currentShift(now: number, starts: string[], tz: string): Shift {
-  const b = boundaries(now, starts, tz);
-  const i = b.findIndex((x) => x > now);
-  return { start: new Date(b[i - 1]), end: new Date(b[i]) };
-}
-export function previousShift(now: number, starts: string[], tz: string): Shift {
-  const b = boundaries(now, starts, tz);
-  const i = b.findIndex((x) => x > now);
-  return { start: new Date(b[i - 2]), end: new Date(b[i - 1]) };
-}
-
-/** "Day (06:00–14:00)", or "06:00–14:00" for a shift without a name, in
- * the shift time zone. */
-export function shiftLabel(shift: Shift, tz: string, names: Record<string, string> = {}): string {
-  const f = (d: Date) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
-  const times = `${f(shift.start)}–${f(shift.end)}`;
-  const name = names[f(shift.start)];
-  return name ? `${name} (${times})` : times;
-}
 
 // ── Summarising ────────────────────────────────────────────────────────────
 
@@ -172,15 +122,6 @@ export async function summariseNow(code?: string): Promise<{ groups: number; shi
       .catch((e) => console.error(`[summaries] ${g.name}: ${(e as Error).message}`));
   }
   return { groups: groups.length, shift: shiftLabel(cur, s.shift_timezone, s.shift_names) };
-}
-
-/** The label for a stored summary: a "so far" one is stored ending when it
- * was made, but is labelled with its shift's real end. */
-export function summaryLabel(x: { shift_start: string | Date; shift_end: string | Date; partial: boolean },
-  s: { shift_starts: string[]; shift_timezone: string; shift_names: Record<string, string> }): string {
-  const start = new Date(x.shift_start);
-  const end = x.partial ? currentShift(start.getTime(), s.shift_starts, s.shift_timezone).end : new Date(x.shift_end);
-  return shiftLabel({ start, end }, s.shift_timezone, s.shift_names);
 }
 
 export interface ShiftSummary {
