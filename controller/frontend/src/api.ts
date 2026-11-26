@@ -123,7 +123,7 @@ export interface SystemHealth {
   pbx_core: { reachable: boolean; registrations?: number; calls?: number; error?: string };
   database: {
     size: string; active_queries: number;
-    table_sizes: { table: string; size: string; rows: number }[];
+    table_sizes: { table: string; size: string; rows: number; rows_exact: boolean }[];
   };
 }
 
