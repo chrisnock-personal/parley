@@ -13,6 +13,7 @@ import * as os from 'os';
 import { execSync } from 'child_process';
 import { requireAuth, requireRole } from '../middleware/session';
 import { query, queryOne } from '../db/pool';
+import { getTableSizes } from '../services/tableSizes';
 import config from '../config';
 
 const router = Router();
@@ -100,14 +101,7 @@ router.get('/health', async (_req: Request, res: Response, next: NextFunction) =
        FROM intercom_endpoints WHERE enabled = TRUE ORDER BY name`
     );
 
-    const { rows: tableSizes } = await query(
-      `SELECT relname AS table,
-              pg_size_pretty(pg_total_relation_size(relid)) AS size,
-              n_live_tup AS rows
-       FROM pg_stat_user_tables
-       ORDER BY pg_total_relation_size(relid) DESC
-       LIMIT 5`
-    );
+    const tableSizes = await getTableSizes(query);
 
     // pbx-core reachability -genuinely new vs. WTNF, since Parley's
     // actual "is the phone system up" signal lives in pbx-core's own
