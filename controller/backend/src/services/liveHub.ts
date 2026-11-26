@@ -131,20 +131,30 @@ async function tick() {
     const clients = [...subs].filter((s): s is ClientSub => s.kind === 'client');
     if (!clients.length) return;
     for (const c of clients) {
-      const cached = ctxCache.get(c.userId);
-      if (!cached || Date.now() - cached.loadedAt > USER_CTX_MS) {
-        try { ctxCache.set(c.userId, await loadUserCtx(c.userId, c.extension)); } catch { /* keep the old one */ }
+      const ctx = ctxCache.get(c.userId);
+      if (!ctx || Date.now() - ctx.loadedAt > USER_CTX_MS) {
+        try { ctxCache.set(c.userId, await loadUserCtx(c.userId, c.extension)); }
+        catch { /* deleted user or DB error: keep the old context if there is one */ }
       }
     }
     if (Date.now() - latestCache.at > LATEST_MS) {
       const ids = new Set<string>();
-      for (const c of clients) for (const b of groupIdsOf(ctxCache.get(c.userId)!)) ids.add(b.target_group_id!);
+      for (const c of clients) {
+        const ctx = ctxCache.get(c.userId);
+        if (!ctx) continue; // load failed and there was no cached context: skip this client
+        for (const b of groupIdsOf(ctx)) ids.add(b.target_group_id!);
+      }
       try { latestCache = { at: Date.now(), byId: await latestIds([...ids]) }; } catch { /* keep the old one */ }
     }
     for (const c of clients) {
       const ctx = ctxCache.get(c.userId);
       if (ctx) deliver(c, buildClientPayload(ctx, live, latestCache.byId));
     }
+  } catch (err) {
+    // Ticks are fired as `void tick()` from setInterval and from subscribe;
+    // an unhandled rejection here makes Node 22 exit and takes every other
+    // stream and the console API down with it.
+    console.error('[liveHub] tick failed:', err);
   } finally {
     running = false;
   }
