@@ -11,6 +11,7 @@
 // pile requests onto the shared GPU.
 import { query, queryOne } from '../db/pool';
 import { getSettings } from './settingsService';
+import { SummaryLine, buildSummaryRequest, formatSummaryLines } from './summaryPrompt';
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://host.containers.internal:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
@@ -71,7 +72,7 @@ export function shiftLabel(shift: Shift, tz: string, names: Record<string, strin
 
 // ── Summarising ────────────────────────────────────────────────────────────
 
-interface Line { at: Date; name: string | null; extension: string; kind: 'said' | 'typed'; text: string }
+type Line = SummaryLine;
 
 async function linesIn(groupId: string, from: Date, to: Date): Promise<Line[]> {
   const { rows } = await query<Line>(
@@ -85,22 +86,12 @@ async function linesIn(groupId: string, from: Date, to: Date): Promise<Line[]> {
   return rows.reverse();
 }
 
-const SYSTEM_PROMPT = `You summarise a broadcast crew's intercom group for the people coming on next.
-You get the group's lines in time order: what people said (transcribed speech, which can contain recognition errors) and what they typed.
-Write 2 to 4 plain sentences of facts: decisions, changes to plans, problems and whether they were solved, and who is doing what.
-Use only what is in the lines. Don't invent names, times or events, don't add advice, and don't start with a preamble like "Here is a summary".`;
-
 async function askOllama(groupName: string, lines: Line[], tz: string): Promise<string> {
-  const time = (d: Date) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
-  const body = lines.map((l) => `[${time(l.at)}] ${l.name ?? l.extension} (${l.kind}): ${l.text}`).join('\n');
   const res = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     signal: AbortSignal.timeout(180_000),
-    body: JSON.stringify({
-      model: OLLAMA_MODEL, stream: false, options: { temperature: 0.2 },
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: `Group: ${groupName}\n\n${body}` }],
-    }),
+    body: JSON.stringify(buildSummaryRequest(groupName, lines, tz, OLLAMA_MODEL)),
   });
   if (!res.ok) throw new Error(`Ollama HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const text = ((await res.json()) as { message?: { content?: string } }).message?.content?.trim();
@@ -188,6 +179,10 @@ export interface ShiftSummary {
   shift_start: string; shift_end: string; summary: string; line_count: number; partial: boolean; created_at: string;
 }
 
+const SUMMARY_SELECT = `SELECT s.id::text, s.group_id, g.name AS group_name, g.dial_code, s.shift_start, s.shift_end,
+       s.summary, s.line_count, s.partial, s.created_at
+  FROM intercom_shift_summaries s JOIN intercom_groups g ON g.id = s.group_id`;
+
 export async function listSummaries(opts: { code?: string; from?: Date; to?: Date; limit?: number }): Promise<ShiftSummary[]> {
   const params: unknown[] = [];
   const where: string[] = [];
@@ -196,10 +191,22 @@ export async function listSummaries(opts: { code?: string; from?: Date; to?: Dat
   if (opts.to) { params.push(opts.to); where.push(`s.shift_start < $${params.length}`); }
   params.push(Math.min(opts.limit ?? 50, 200));
   const { rows } = await query<ShiftSummary>(
-    `SELECT s.id::text, s.group_id, g.name AS group_name, g.dial_code, s.shift_start, s.shift_end, s.summary,
-            s.line_count, s.partial, s.created_at
-       FROM intercom_shift_summaries s JOIN intercom_groups g ON g.id = s.group_id
+    `${SUMMARY_SELECT}
       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
       ORDER BY s.shift_start DESC, g.name LIMIT $${params.length}`, params);
   return rows;
+}
+
+export async function findSummary(id: string): Promise<ShiftSummary | undefined> {
+  const { rows } = await query<ShiftSummary>(`${SUMMARY_SELECT} WHERE s.id::text = $1`, [id]);
+  return rows[0];
+}
+
+/** The lines a summary was made from (#42), read live from retention and
+ * formatted exactly as they were for the model. Once retention has deleted
+ * them this is empty; we don't keep a second copy of the text just to show it. */
+export async function summarySourceLines(s: Pick<ShiftSummary, 'group_id' | 'shift_start' | 'shift_end'>): Promise<string> {
+  const { shift_timezone } = await getSettings();
+  const lines = await linesIn(s.group_id, new Date(s.shift_start), new Date(s.shift_end));
+  return formatSummaryLines(lines, shift_timezone);
 }

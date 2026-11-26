@@ -9,6 +9,27 @@ const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); retur
 const toLocalInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 const fmt = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 
+// #42: let a reader check the summary against the lines it came from. Loaded
+// on first open, and empty once retention has deleted the original lines.
+function SummarySourceLines({ id }: { id: string }) {
+  const [lines, setLines] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const load = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
+    if (!e.currentTarget.open || lines !== null) return;
+    api.summarySourceLines(id).then((r) => setLines(r.lines)).catch(() => setError('Could not load source lines.'));
+  };
+  return (
+    <details className="c-conv-source" onToggle={load}>
+      <summary>Source lines</summary>
+      {lines === null
+        ? <div className="c-help">{error || 'Loading…'}</div>
+        : lines
+          ? <pre>{lines}</pre>
+          : <div className="c-help">The lines this summary used have been deleted by retention.</div>}
+    </details>
+  );
+}
+
 function highlight(text: string, q: string) {
   if (!q.trim()) return text;
   const i = text.toLowerCase().indexOf(q.trim().toLowerCase());
@@ -124,6 +145,7 @@ export default function ConversationsPage({ groups, users, onError }: { groups: 
               <div className="c-conv-sum-head">{s.group_name} · {new Date(s.shift_start).toLocaleDateString([], { dateStyle: 'medium' })} · {s.label}{s.partial ? ' · so far' : ''}</div>
               <div>{s.summary}</div>
               <div className="c-conv-meta">made {fmt(s.created_at)} from {s.line_count} line{s.line_count === 1 ? '' : 's'} · kept after the lines go</div>
+              <SummarySourceLines id={s.id} />
             </div>
           ))}
           {summariesOn && !summaries.length && <div className="c-empty">No summaries for these dates yet.</div>}

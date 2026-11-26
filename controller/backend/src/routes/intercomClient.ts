@@ -11,7 +11,7 @@ import { listLines } from '../services/transcriptService';
 import { latestIds, listMessages, postMessage } from '../services/chatService';
 import { buildClientPayload, getSnapshot, groupIdsOf, loadUserCtx, subscribeClient } from '../services/liveHub';
 import { openStream } from '../services/stream';
-import { listSummaries, summaryLabel } from '../services/summaryService';
+import { findSummary, listSummaries, summaryLabel, summarySourceLines } from '../services/summaryService';
 
 const router = Router();
 
@@ -181,6 +181,21 @@ router.post('/groups/:code/chat', requireIntercomClientAuth, async (req, res, ne
     if (typeof text !== 'string') return res.status(400).json({ error: 'text is required' });
     const u = req.intercomClientUser!;
     res.json(await postMessage(g.groupId!, { extension: u.extension, name: u.name }, text));
+  } catch (err) { next(err); }
+});
+
+// The lines behind one of those summaries (#42), only for a group the user
+// has a button for. Read from retention on demand; deleted lines aren't kept
+// a second time just to be shown here.
+router.get('/groups/:code/summaries/:id/source', requireIntercomClientAuth, async (req, res, next) => {
+  try {
+    const buttons = await listButtons(req.intercomClientUser!.id);
+    if (!buttons.some((b) => b.button_type === 'group' && b.target_group_dial_code === req.params.code)) {
+      return res.status(404).json({ error: 'Not one of your groups' });
+    }
+    const s = await findSummary(req.params.id);
+    if (!s || s.dial_code !== req.params.code) return res.status(404).json({ error: 'Summary not found' });
+    res.json({ lines: await summarySourceLines(s) });
   } catch (err) { next(err); }
 });
 

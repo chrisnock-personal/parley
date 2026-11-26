@@ -392,6 +392,10 @@ export const api = {
   listSummaries(f: { group?: string; from?: string; to?: string }) {
     return req<{ enabled: boolean; summaries: ShiftSummary[] }>(`/conversations/summaries?${qs(f)}`);
   },
+  /** The still-kept lines behind one summary (#42), in the form the model saw. */
+  summarySourceLines(id: string) {
+    return req<{ lines: string }>(`/conversations/summaries/${encodeURIComponent(id)}/source`);
+  },
   summariseNow(group?: string) {
     return req<{ groups: number; shift: string }>('/conversations/summarise', { method: 'POST', body: JSON.stringify({ group }) });
   },

@@ -7,7 +7,7 @@ import { requireAuth, requireRole } from '../middleware/session';
 import { query } from '../db/pool';
 import { audit } from '../services/auditService';
 import { getSettings } from '../services/settingsService';
-import { listSummaries, summariseNow, summaryLabel } from '../services/summaryService';
+import { findSummary, listSummaries, summariseNow, summaryLabel, summarySourceLines } from '../services/summaryService';
 
 const router = Router();
 router.use(requireAuth, requireRole('admin', 'editor'));
@@ -85,6 +85,17 @@ router.get('/summaries', async (req, res, next) => {
       enabled: s.summaries_enabled,
       summaries: list.map((x) => ({ ...x, label: summaryLabel(x, s) })),
     });
+  } catch (err) { next(err); }
+});
+
+// The lines behind a summary (#42). Read from retention on demand rather
+// than kept with the summary: once the group's lines are deleted there is
+// nothing left to show.
+router.get('/summaries/:id/source', async (req, res, next) => {
+  try {
+    const s = await findSummary(req.params.id);
+    if (!s) return res.status(404).json({ error: 'Summary not found' });
+    res.json({ lines: await summarySourceLines(s) });
   } catch (err) { next(err); }
 });
 

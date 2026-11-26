@@ -155,6 +155,10 @@ export const api = {
   groupSummaries(code: string): Promise<ShiftSummary[]> {
     return req(`/groups/${encodeURIComponent(code)}/summaries`);
   },
+  /** The still-kept lines behind one summary (#42), in the form the model saw. */
+  summarySourceLines(code: string, id: string): Promise<{ lines: string }> {
+    return req(`/groups/${encodeURIComponent(code)}/summaries/${encodeURIComponent(id)}/source`);
+  },
   groupParticipants(): Promise<LiveState> {
     return req('/groups/participants');
   },

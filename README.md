@@ -114,7 +114,9 @@ as "Day", and the time zone under Settings), each group that had anything said o
 summary from the server's own Ollama (`OLLAMA_URL`, `OLLAMA_MODEL`;
 nothing leaves the server). The newest sits at the top of the group's
 conversation with the earlier ones a click away, and summaries are kept for
-a year, after the lines are gone. Groups set to Don't keep aren't summarised.
+a year, after the lines are gone. Each summary has a **Source lines** disclosure
+so you can check the still-kept lines it was made from; after retention deletes
+those lines there is nothing to show. Groups set to Don't keep aren't summarised.
 
 ![The Production conversation with spoken and typed lines, and Studio Floor's transcript read without joining](docs/images/04-conversation.png)
 
