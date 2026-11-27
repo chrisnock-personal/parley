@@ -41,3 +41,6 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
       - name: typecheck
         run: npx tsc --noEmit -p .
+      - name: unit tests
+        if: matrix.package == 'controller/backend'
+        run: npm test

@@ -759,16 +759,21 @@ function ShiftSummaries({ code }: { code: string }) {
   }, [code]);
   if (!list.length) return null;
   const day = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
-  const one = (s: ShiftSummary, latest: boolean) => (
-    <div key={s.id} className={`shift-summary${latest ? ' latest' : ''}`}>
-      <div className="shift-summary-label">{latest ? (s.partial ? 'THIS SHIFT' : 'LAST SHIFT') : day(s.shift_start)} · {s.label}{s.partial ? ' · so far' : ''} · AI summary</div>
-      <div>{s.summary}</div>
-      <SummarySourceLines code={code} id={s.id} />
-      {latest && list.length > 1 && (
-        <button className="link-btn" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide earlier shifts' : `Earlier shifts (${list.length - 1})`}</button>
-      )}
-    </div>
-  );
+  const one = (s: ShiftSummary, latest: boolean) => {
+    const when = latest && s.current ? 'THIS SHIFT' : latest && !s.partial ? 'LAST SHIFT' : day(s.shift_start);
+    // An older partial already carries its "so far at HH:MM" in the label.
+    const soFar = s.partial && s.current ? ' · so far' : '';
+    return (
+      <div key={s.id} className={`shift-summary${latest ? ' latest' : ''}`}>
+        <div className="shift-summary-label">{when} · {s.label}{soFar} · AI summary</div>
+        <div>{s.summary}</div>
+        <SummarySourceLines code={code} id={s.id} />
+        {latest && list.length > 1 && (
+          <button className="link-btn" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide earlier shifts' : `Earlier shifts (${list.length - 1})`}</button>
+        )}
+      </div>
+    );
+  };
   return (
     <div className="shift-summaries">
       {one(list[0], true)}
