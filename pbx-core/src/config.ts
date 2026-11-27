@@ -69,6 +69,11 @@ export const config = {
   // controller-backend's "Live" view to poll. See admin.ts.
   admin: {
     port: parseInt(process.env.PBX_ADMIN_PORT || '9080', 10),
+    // Default bind is unchanged (all interfaces): controller-backend is
+    // bridge-networked and cannot reach a loopback-bound host service under
+    // WSL. Set INTERNAL_API_HOST to a single address where the caller can
+    // reach it; 127.0.0.1 is safest when both processes share a network.
+    host: process.env.INTERNAL_API_HOST || '0.0.0.0',
     // Bearer token required on /status, and sent with the transcriber poke.
     token: requiredSecret('INTERNAL_API_TOKEN', 32),
   },

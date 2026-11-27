@@ -33,6 +33,12 @@ const config = {
   pgPassword: requiredSecret('PGPASSWORD', 16),
   pgPoolMax:  parseInt(process.env.PG_POOL_MAX || '10', 10),
   pgSsl:      process.env.PGSSL === 'true',
+  // Optional CA PEM for Postgres TLS (read by db/pool.ts). Empty = trust the
+  // system CA store; the certificate is verified either way (issue #35 L1).
+  pgSslCa:    process.env.PGSSL_CA || '',
+  // Explicit escape hatch for self-signed setups with no CA to supply.
+  // '1' or 'true' only, so a typo can never turn verification off.
+  pgSslInsecure: process.env.PGSSL_INSECURE === '1' || process.env.PGSSL_INSECURE === 'true',
 
   // pbx-core's read-only admin/status HTTP server (registrations + live
   // calls) -see services/pbxCoreService.ts. Docker-compose overrides this

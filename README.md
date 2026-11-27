@@ -306,8 +306,9 @@ podman-compose up -d --build
 - Postgres: `127.0.0.1:5433` on the host, for direct inspection.
 - Internal only: drachtio's control port `127.0.0.1:9022`; pbx-core's
   `/status` (`:9080`) and the transcriber's `/talking`/`/poke` (`:9081`)
-  need `Authorization: Bearer $INTERNAL_API_TOKEN`; FreeSWITCH's `:5080`
-  accepts INVITEs only from this host's own address (ACL `pbx_core`).
+  need `Authorization: Bearer $INTERNAL_API_TOKEN` (bind address configurable
+  with `INTERNAL_API_HOST`, default `0.0.0.0` -see "TLS" below); FreeSWITCH's
+  `:5080` accepts INVITEs only from this host's own address (ACL `pbx_core`).
 
 `pbx-core`, `rtpengine`, and `freeswitch` run with `network_mode: host` —
 required so rtpengine can anchor media reachably for endpoints on other
@@ -352,6 +353,26 @@ browser allows the microphone (it needs a secure context).
 Nothing else needs configuring beyond `RTPENGINE_PUBLIC_IP` in `.env`, which
 is used as the certificate's IP entry. The client's SIP/WS signaling is
 proxied through the same nginx at `/ws`.
+
+**Postgres TLS** (`controller-backend`): `PGSSL=true` encrypts the DB
+connection *and* verifies the server certificate (previously verification was
+silently disabled). With no `PGSSL_CA`, Node's system CA store is used. For a
+private CA, set `PGSSL_CA` to a PEM path mounted into the backend container
+(see the commented volume in `docker-compose.yml`); a missing or unreadable
+file is a hard error, never a downgrade. Self-signed lab databases with no CA
+file can set `PGSSL_INSECURE=1` to skip verification explicitly -this logs a
+loud warning on startup and must not be used on an untrusted network. This is
+only the Postgres piece of [issue #35](https://github.com/chrisnock-personal/parley/issues/35);
+SIP/RTP and the internal HTTP APIs are still plain text.
+
+**Internal API bind address**: pbx-core's `/status` (`:9080`) and the
+transcriber's `/talking`/`/poke` (`:9081`) still use plain HTTP with
+`INTERNAL_API_TOKEN`. They keep binding `0.0.0.0` by default, because a
+bridge-networked controller-backend cannot reach a loopback-bound host
+service under WSL. Set `INTERNAL_API_HOST` in `.env` to narrow the bind to one
+address (e.g. `127.0.0.1` when the caller shares that network namespace, or
+the host address the caller can actually reach). Default and WSL behaviour
+are unchanged.
 
 **Trust the CA on each device** (once per device):
 - **iPad / iPhone**: open `http://<host>:8080/ca.crt` in Safari and allow

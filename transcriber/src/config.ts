@@ -32,7 +32,10 @@ export const config = {
   // Who's-talking endpoint (GET /talking), polled by controller-backend for
   // the client's participant lists. Host network, so 0.0.0.0 like pbx-core's
   // admin port: controller-backend (bridged) reaches it at the host LAN IP.
+  // INTERNAL_API_HOST can narrow the bind to one address (e.g. 127.0.0.1
+  // when the caller shares this network namespace); default is unchanged.
   talkingPort: parseInt(process.env.TALKING_PORT || '9081', 10),
+  talkingHost: process.env.INTERNAL_API_HOST || '0.0.0.0',
   // How long someone still counts as talking after their last speech frame:
   // bridges the gaps between words so the indicator doesn't flicker.
   talkHoldMs: parseInt(process.env.TALK_HOLD_MS || '700', 10),
