@@ -142,7 +142,8 @@ createServer((req, res) => {
   }
   res.writeHead(404);
   res.end();
-}).listen(config.talkingPort, () => console.log(`[startup] who's-talking on :${config.talkingPort}/talking`));
+}).listen(config.talkingPort, config.talkingHost,
+  () => console.log(`[startup] who's-talking on ${config.talkingHost}:${config.talkingPort}/talking`));
 
 console.log(`[startup] transcriber polling ${config.pbxStatusUrl} every ${config.pollMs}ms, whisper at ${config.whisperUrl}`);
 setInterval(() => void tick(), config.pollMs);

@@ -53,5 +53,5 @@ export function startAdminServer(port: number): void {
     }
     res.writeHead(404);
     res.end();
-  }).listen(port, () => console.log(`admin HTTP listening on :${port}`));
+  }).listen(port, config.admin.host, () => console.log(`admin HTTP listening on ${config.admin.host}:${port}`));
 }

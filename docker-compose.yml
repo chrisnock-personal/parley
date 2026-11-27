@@ -65,6 +65,12 @@ services:
       PGDATABASE:       ${PGDATABASE:-intercom}
       PGUSER:           ${PGUSER:-intercom_user}
       PGPASSWORD:       ${PGPASSWORD:?set PGPASSWORD in .env}
+      # Postgres TLS (#35 L1): PGSSL=true verifies the server certificate.
+      # PGSSL_CA points at a CA PEM inside this container; see the volume
+      # example below. PGSSL_INSECURE=1 is an explicit, warned-about opt-out.
+      PGSSL:            ${PGSSL:-false}
+      PGSSL_CA:         ${PGSSL_CA:-}
+      PGSSL_INSECURE:   ${PGSSL_INSECURE:-}
       HEALTH_INTERVAL_MS: "30000"
       # Demo data (controller/backend/src/services/demoSeedService.ts): a
       # broadcast crew on 2001-2008 plus five talk groups. Off by default;
@@ -96,6 +102,9 @@ services:
       # Where an uploaded HTTPS certificate is written for nginx (#32). Not
       # the local CA's volume: the backend never sees ca.key.
       - parley-tls-custom:/var/lib/parley/tls-custom:U
+      # For a private Postgres CA, set PGSSL_CA_HOST in .env, PGSSL_CA to the
+      # in-container path below, and uncomment this line (issue #35 L1):
+      # - ${PGSSL_CA_HOST}:/etc/ssl/certs/postgres-ca.pem:ro
     # Loopback only (security review 2026-11-09, C2): browsers reach the API
     # through nginx's /api/v1.
     ports:
@@ -174,6 +183,10 @@ services:
       DRACHTIO_SECRET: ${DRACHTIO_SECRET:?set DRACHTIO_SECRET in .env}
       # Bearer token for /status (admin.ts) and the transcriber poke.
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN in .env}
+      # Bind address for /status. Default 0.0.0.0 is unchanged (the bridged
+      # backend cannot reach loopback on this host); narrow it in .env where
+      # the caller shares the network namespace.
+      INTERNAL_API_HOST: ${INTERNAL_API_HOST:-0.0.0.0}
       # rtpengine's control address; see images/rtpengine/entrypoint.sh
       # (set RTPENGINE_NG_HOST=10.255.255.254 under WSL2 mirrored networking).
       RTPENGINE_HOST:  ${RTPENGINE_NG_HOST:-127.0.0.1}
@@ -269,6 +282,8 @@ services:
     environment:
       PBX_STATUS_URL: "http://127.0.0.1:9080/status"
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN in .env}
+      # Bind address for /talking and /poke (same default/knob as pbx-core).
+      INTERNAL_API_HOST: ${INTERNAL_API_HOST:-0.0.0.0}
       RTPENGINE_HOST: ${RTPENGINE_NG_HOST:-127.0.0.1}
       RTPENGINE_PORT: "22222"
       MEDIA_IP:       ${RTPENGINE_PUBLIC_IP:?set RTPENGINE_PUBLIC_IP in .env to this host's routed/LAN IP}
