@@ -107,7 +107,11 @@ export default function HealthPanel({ onError }: { onError: (msg: string) => voi
           {health.database.table_sizes.map(t => (
             <div className="session-row" key={t.table}>
               <div className="session-circuit">{t.table}</div>
-              <span className="session-ts">{t.size} · {t.rows} rows</span>
+              <span className="session-ts">
+                {t.size} · {t.rows_exact
+                  ? `${t.rows.toLocaleString()} rows`
+                  : `≈${t.rows.toLocaleString()} rows (estimated)`}
+              </span>
             </div>
           ))}
 
