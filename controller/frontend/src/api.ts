@@ -101,7 +101,7 @@ export interface ConversationLine {
 }
 export interface ShiftSummary {
   id: string; group_name: string; dial_code: string; shift_start: string; shift_end: string; label: string;
-  summary: string; line_count: number; partial: boolean; created_at: string;
+  summary: string; line_count: number; partial: boolean; current: boolean; created_at: string;
 }
 export interface ConversationFilters { group?: string; person?: string; from?: string; to?: string; q?: string; kind?: string }
 const qs = (f: object) => {

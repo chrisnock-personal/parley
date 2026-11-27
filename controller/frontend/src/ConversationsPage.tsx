@@ -121,7 +121,7 @@ export default function ConversationsPage({ groups, users, onError }: { groups: 
           {!summariesOn && <p className="c-help c-conv-note">Shift summaries are off (Settings).</p>}
           {summaries.map((s) => (
             <div key={s.id} className="c-conv-summary">
-              <div className="c-conv-sum-head">{s.group_name} · {new Date(s.shift_start).toLocaleDateString([], { dateStyle: 'medium' })} · {s.label}{s.partial ? ' · so far' : ''}</div>
+              <div className="c-conv-sum-head">{s.group_name} · {new Date(s.shift_start).toLocaleDateString([], { dateStyle: 'medium' })} · {s.label}{s.partial && s.current ? ' · so far' : ''}</div>
               <div>{s.summary}</div>
               <div className="c-conv-meta">made {fmt(s.created_at)} from {s.line_count} line{s.line_count === 1 ? '' : 's'} · kept after the lines go</div>
             </div>
