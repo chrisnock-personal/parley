@@ -724,6 +724,27 @@ function ReadAloudQueue({ ra }: { ra: ReadAloudCtl }) {
   );
 }
 
+// #42: open the summary's source lines to check what it was based on. Read
+// on first open; when retention has deleted the lines the response is empty.
+function SummarySourceLines({ code, id }: { code: string; id: string }) {
+  const [lines, setLines] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const load = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
+    if (!e.currentTarget.open || lines !== null) return;
+    api.summarySourceLines(code, id).then((r) => setLines(r.lines)).catch(() => setError('Could not load source lines.'));
+  };
+  return (
+    <details className="shift-summary-source" onToggle={load}>
+      <summary>Source lines</summary>
+      {lines === null
+        ? <div className="shift-summary-source-note">{error || 'Loading…'}</div>
+        : lines
+          ? <pre>{lines}</pre>
+          : <div className="shift-summary-source-note">The lines this summary used have been deleted by retention.</div>}
+    </details>
+  );
+}
+
 // The last shift's AI summary (#29) at the top of a group's conversation,
 // with the earlier ones a click away. Shown only when there's one.
 function ShiftSummaries({ code }: { code: string }) {
@@ -746,6 +767,7 @@ function ShiftSummaries({ code }: { code: string }) {
       <div key={s.id} className={`shift-summary${latest ? ' latest' : ''}`}>
         <div className="shift-summary-label">{when} · {s.label}{soFar} · AI summary</div>
         <div>{s.summary}</div>
+        <SummarySourceLines code={code} id={s.id} />
         {latest && list.length > 1 && (
           <button className="link-btn" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide earlier shifts' : `Earlier shifts (${list.length - 1})`}</button>
         )}

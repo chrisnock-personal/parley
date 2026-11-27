@@ -456,6 +456,8 @@ button.c-btn.wide { width: 100%; }
 .c-conv-note { margin: 0; padding: 0 16px 10px; }
 .c-conv-summary { padding: 14px 16px; border-top: 1px solid #22272e; font-size: 13px; line-height: 1.5; display: flex; flex-direction: column; gap: 4px; }
 .c-conv-sum-head { font-weight: 600; }
+.c-conv-source summary { cursor: pointer; color: var(--accent); font-size: 12px; }
+.c-conv-source pre { margin: 6px 0 0; padding: 8px 10px; max-height: 240px; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; font-family: var(--mono); font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
 .c-conv-filters .c-grow { flex: 1; min-width: 180px; }
 .c-conv-filters .c-grow input { width: 100%; box-sizing: border-box; }
 

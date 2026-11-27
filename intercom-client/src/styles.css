@@ -599,4 +599,7 @@ input[type=checkbox] { accent-color: var(--accent); }
 .shift-summary { display: block; background: var(--surface-3); border: 1px solid var(--line-2); border-radius: var(--r-btn); padding: 10px 12px; font-size: 13px; line-height: 1.5; }
 .shift-summary.latest { border-color: var(--accent); }
 .shift-summary-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--accent); margin-bottom: 4px; }
+.shift-summary-source summary { cursor: pointer; color: var(--accent); font-size: 12px; margin-top: 6px; }
+.shift-summary-source pre { margin: 6px 0 0; padding: 8px 10px; max-height: 240px; overflow: auto; background: var(--surface-3); border: 1px solid var(--line-2); border-radius: var(--r-btn); font-family: var(--mono); font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+.shift-summary-source-note { color: var(--dim); font-size: 11px; margin-top: 4px; }
 .shift-summary .link-btn { display: block; margin-top: 6px; padding: 0; color: var(--accent); font-weight: 600; }
