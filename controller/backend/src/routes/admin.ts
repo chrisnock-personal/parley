@@ -253,18 +253,29 @@ router.post('/db/archive', async (req: Request, res: Response, next: NextFunctio
       return res.status(400).json({ error: 'days must be a non-negative integer' });
     }
     const plainName = `parley-archive-${new Date().toISOString().slice(0,10)}-${days}d.sql.gz`;
-    const rows = await writeArchive(path.join(os.tmpdir(), plainName), days);
-    // Encrypted to the backup key when one is set (#33): .sql.gz.age.
-    const tmpFile = await encryptFile(path.join(os.tmpdir(), plainName), (await getSettings()).backup_recipient);
-    const archiveName = path.basename(tmpFile);
-    const stat = fs.statSync(tmpFile);
-    let transferResult = 'No transfer configured';
+    // One directory per request (#44): writeArchive()/encryptFile() have many
+    // awaits and concurrent requests with the same `days` used to share one
+    // deterministic path, so they could truncate, overwrite or unlink each
+    // other's file. Only the delivered name stays deterministic.
+    const workDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'parley-archive-'));
+    try {
+      const plainFile = path.join(workDir, plainName);
+      const rows = await writeArchive(plainFile, days);
+      // Encrypted to the backup key when one is set (#33): .sql.gz.age.
+      const tmpFile = await encryptFile(plainFile, (await getSettings()).backup_recipient);
+      const archiveName = path.basename(tmpFile);
+      const stat = fs.statSync(tmpFile);
+      let transferResult = 'No transfer configured';
 
-    if (transfer) transferResult = await sendArchive(tmpFile, archiveName, transfer);
+      if (transfer) transferResult = await sendArchive(tmpFile, archiveName, transfer);
 
-    try { fs.unlinkSync(tmpFile); } catch { /* best effort */ }
-    await audit(req.user!.email, 'database', '00000000-0000-0000-0000-000000000000', 'update', { action: 'archive', days, rows, transfer: transferResult });
-    res.json({ ok: true, archive_name: archiveName, size_bytes: stat.size, rows, transfer: transferResult });
+      await audit(req.user!.email, 'database', '00000000-0000-0000-0000-000000000000', 'update', { action: 'archive', days, rows, transfer: transferResult });
+      res.json({ ok: true, archive_name: archiveName, size_bytes: stat.size, rows, transfer: transferResult });
+    } finally {
+      // Scoped to this request: removes the encrypted file after transfer and
+      // the plaintext too when no backup key was configured.
+      try { fs.rmSync(workDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
   } catch (e) { next(e); }
 });
 
