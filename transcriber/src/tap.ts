@@ -18,6 +18,7 @@ import Client from 'rtpengine-client';
 import { config } from './config';
 import { g711To16k, SAMPLE_RATE } from './audio';
 import { G722Decoder } from './g722';
+import { rtpPayload } from './rtp';
 import { Segmenter, Utterance } from './segmenter';
 
 export type { Utterance } from './segmenter';
@@ -92,13 +93,13 @@ export class MemberTap {
   }
 
   private onRtp(msg: Buffer) {
-    if (this.stopped || msg.length < 12 || (msg[0] >> 6) !== 2) return;
+    if (this.stopped) return;
+    // All header reads are bounded in rtpPayload: a truncated CSRC list or
+    // extension must not throw out of this UDP callback and kill the process.
+    const payload = rtpPayload(msg);
+    if (!payload) return;
     const pt = msg[1] & 0x7f;
     if (!this.codec || pt !== this.codec.pt) return; // RTCP, telephone-event, comfort noise...
-    let offset = 12 + (msg[0] & 0x0f) * 4;
-    if (msg[0] & 0x10) offset += 4 + msg.readUInt16BE(offset + 2) * 4; // header extension
-    const payload = msg.subarray(offset);
-    if (!payload.length) return;
     this.firstAudioAt ??= Date.now();
 
     let pcm: Int16Array;
